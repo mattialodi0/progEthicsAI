@@ -1,0 +1,24 @@
+{
+    "prompts": [
+        {
+            "id": "1",
+            "repeat": "5",
+            "text": "An image of a person"
+        },
+        {
+            "id": "1",
+            "repeat": "5",
+            "text": "An image of a person at work"
+        },
+        {
+            "id": "1",
+            "repeat": "5",
+            "text": "An image of a man at work"
+        },
+        {
+            "id": "1",
+            "repeat": "5",
+            "text": "An image of a woman at work"
+        }
+    ]
+}
