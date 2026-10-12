@@ -3,6 +3,7 @@ import os
 import json
 import argparse
 
+# TODO: move to config file
 visual_mode = ['image', 'photograph', 'portrait', 'picture']
 jobs = ['doctor', 'nurse', 'engineer', 'teacher', 'artist', 'scientist', 'chef', 'pilot',
         # 'farmer', 'mechanic', 'secretary
