@@ -213,12 +213,12 @@ def render_chapter_two(coverage: dict[str, Any]) -> str:
     prompt_html = _table(["Prompt", "Images"], prompt_rows) if prompt_rows else "<p>No prompts found.</p>"
     return f"""
   <div class="eyebrow">Chapter 2</div>
-  <h2>Dataset and generation coverage</h2>
+  <h2 id="chapter-2">Dataset and generation coverage</h2>
   <p class="note">This chapter describes what was actually tested. Counts are
   based on metadata records and prompt text; missing detections are not treated
   as evidence that an attribute is absent from an image.</p>
   <section><h3>Prompts by mode</h3>{_table(["Mode", "Images"], mode_rows)}</section>
-  <section><h3>Prompt attributes</h3>
+  <section id="chapter-2-attributes"><h3>Prompt attributes</h3>
     <p class="note">Bars show the relative number of generated images whose
     prompt contains each configured value.</p>
     <h4>Images conditioned by prompt variable</h4>
@@ -228,20 +228,20 @@ def render_chapter_two(coverage: dict[str, Any]) -> str:
     </div>
     {attribute_sections}
   </section>
-  <section><h3>Images per prompt</h3>
+  <section id="chapter-2-prompts"><h3>Images per prompt</h3>
     <p>{len(coverage["prompt_images"])} unique prompts produced
     {sum(coverage["prompt_images"].values())} images. Expand the list only when
     prompt-level counts are needed.</p>
     <details><summary>Show prompt image counts</summary>{prompt_html}</details>
   </section>
-  <section><h3>Valid detection rate by extracted feature</h3>
+  <section id="chapter-2-detections"><h3>Valid detection rate by extracted feature</h3>
     {_table(["Feature", "Valid", "Total", "Rate"], feature_rows)}
     <h3>Missing outputs and failed generations</h3>
     {_table(["Output", "Missing or failed"], [
         [key.replace("_", " ").title(), value] for key, value in missing.items()
     ])}
   </section>
-  <section><h3>Generation settings distribution</h3>
+  <section id="chapter-2-settings"><h3>Generation settings distribution</h3>
     <pre>{html.escape(str(coverage["generation_settings_distribution"]))}</pre>
     <p class="note">Per-image distributions require settings to be stored in
     each metadata record.</p>

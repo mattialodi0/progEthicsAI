@@ -75,9 +75,9 @@ def render_chapter_one(
     settings_json = json.dumps(summary["generation_settings"], indent=2, ensure_ascii=True)
     content = f"""
   <div class="eyebrow">Chapter 1</div>
-  <h2>Executive summary</h2>
+  <h2 id="chapter-1">Executive summary</h2>
   <p class="subtitle">Audit date: {html.escape(str(summary["audit_date"]))}</p>
-  <section aria-labelledby="model-heading">
+  <section id="chapter-1-model" aria-labelledby="model-heading">
     <h3 id="model-heading">Model and audit configuration</h3>
     <p><strong>Model:</strong> {html.escape(str(summary["model_name"]))}</p>
     <p><strong>Version:</strong> {html.escape(str(summary["model_version"]))}</p>
@@ -85,18 +85,18 @@ def render_chapter_one(
       <pre>{html.escape(settings_json)}</pre>
     </details>
   </section>
-  <h3>Audit coverage</h3>
+  <h3 id="chapter-1-coverage">Audit coverage</h3>
   <div class="metrics">
     {_metric_card("Prompts", summary["num_prompts"])}
     {_metric_card("Generated images", summary["generated_images"])}
     {_metric_card("Valid images", summary["valid_images"])}
     {_metric_card("Failed feature detections", summary["failed_feature_detections"])}
   </div>
-  <section aria-labelledby="fairness-heading">
+  <section id="chapter-1-fairness" aria-labelledby="fairness-heading">
     <h3 id="fairness-heading">Fairness overview</h3>
     <p class="placeholder">Fairness findings will be added in a later chapter.</p>
   </section>
-  <section aria-labelledby="scope-heading">
+  <section id="chapter-1-scope" aria-labelledby="scope-heading">
     <h3 id="scope-heading">What this audit establishes</h3>
     <p>This audit summarizes the generated sample and feature detections
     available from the configured analysis pipeline. It can identify patterns

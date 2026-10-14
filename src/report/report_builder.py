@@ -53,7 +53,23 @@ def build_report(
   <style>
     :root {{ color-scheme: light; font-family: system-ui, sans-serif; }}
     body {{ background: #f4f6f8; color: #17202a; margin: 0; }}
-    main {{ margin: 0 auto; max-width: 1100px; padding: 2rem 1rem 4rem; }}
+    .report-layout {{ display: grid; gap: 2rem; grid-template-columns: 220px minmax(0, 1fr);
+      margin: 0 auto; max-width: 1320px; padding: 2rem 1rem 4rem; }}
+    main {{ min-width: 0; }}
+    .sidebar {{ align-self: start; position: sticky; top: 1rem; }}
+    .sidebar nav {{ background: white; border: 1px solid #d9e2ec; border-radius: 8px;
+      box-shadow: 0 2px 5px #102a430d; padding: 1rem; }}
+    .sidebar-title {{ color: #52606d; font-size: .8rem; font-weight: 700;
+      letter-spacing: .08em; text-transform: uppercase; }}
+    .sidebar a {{ border-left: 3px solid transparent; color: #334e68; display: block;
+      padding: .45rem .6rem; text-decoration: none; }}
+    .sidebar a:hover, .sidebar a.active {{ background: #f0f4f8;
+      border-left-color: #486581; color: #102a43; }}
+    .sidebar .subitem {{ font-size: .9rem; padding-left: 1.25rem; }}
+    @media (max-width: 800px) {{ .report-layout {{ display: block; }}
+      .sidebar {{ margin-bottom: 1rem; position: static; }} .sidebar nav {{
+        display: flex; gap: .25rem; overflow-x: auto; white-space: nowrap; }}
+      .sidebar-title {{ display: none; }} .sidebar .subitem {{ display: none; }} }}
     .eyebrow {{ color: #52606d; font-size: .8rem; font-weight: 700;
       letter-spacing: .08em; text-transform: uppercase; }}
     h1 {{ margin-bottom: .35rem; }} h2 {{ margin-top: 2rem; }}
@@ -84,14 +100,47 @@ def build_report(
   </style>
 </head>
 <body>
-<main>
-  <h1>Fairness report</h1>
-  <p class="subtitle">Interactive audit report</p>
-  {chapter_one.html}
-  {chapter_two}
-</main>
+<div class="report-layout">
+  <aside class="sidebar" aria-label="Report index">
+    <nav>
+      <div class="sidebar-title">Report index</div>
+      <a href="#report-title" data-section-link="report-title">Fairness report</a>
+      <a href="#chapter-1" data-section-link="chapter-1">1. Executive summary</a>
+      <a class="subitem" href="#chapter-1-model" data-section-link="chapter-1-model">Model and configuration</a>
+      <a class="subitem" href="#chapter-1-coverage" data-section-link="chapter-1-coverage">Audit coverage</a>
+      <a class="subitem" href="#chapter-1-fairness" data-section-link="chapter-1-fairness">Fairness overview</a>
+      <a class="subitem" href="#chapter-1-scope" data-section-link="chapter-1-scope">Scope and limitations</a>
+      <a href="#chapter-2" data-section-link="chapter-2">2. Dataset and generation coverage</a>
+      <a class="subitem" href="#chapter-2-attributes" data-section-link="chapter-2-attributes">Prompt attributes</a>
+      <a class="subitem" href="#chapter-2-prompts" data-section-link="chapter-2-prompts">Images per prompt</a>
+      <a class="subitem" href="#chapter-2-detections" data-section-link="chapter-2-detections">Detection rates</a>
+      <a class="subitem" href="#chapter-2-settings" data-section-link="chapter-2-settings">Generation settings</a>
+    </nav>
+  </aside>
+  <main>
+    <h1 id="report-title">Fairness report</h1>
+    <p class="subtitle">Interactive audit report</p>
+    {chapter_one.html}
+    {chapter_two}
+  </main>
+</div>
 <script>
   const reportData = {serialized_data};
+  const reportSections = document.querySelectorAll("[data-section-link]");
+  const sectionLinks = new Map(Array.from(reportSections).map((link) => [
+    link.dataset.sectionLink, link
+  ]));
+  const sectionObserver = new IntersectionObserver((entries) => {{
+    entries.forEach((entry) => {{
+      if (entry.isIntersecting) {{
+        sectionLinks.forEach((link) => link.classList.remove("active"));
+        sectionLinks.get(entry.target.id)?.classList.add("active");
+      }}
+    }});
+  }}, {{ rootMargin: "-15% 0px -70% 0px" }});
+  document.querySelectorAll("[id^='chapter-'], #report-title").forEach((section) => {{
+    sectionObserver.observe(section);
+  }});
 </script>
 </body>
 </html>
