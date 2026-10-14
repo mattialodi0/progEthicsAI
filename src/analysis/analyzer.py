@@ -34,7 +34,13 @@ def run_analysis(data, config):
     }
 
     # Build the report
-    build_report(data, analysis_results, config)
+    return build_report(
+        data,
+        analysis_results,
+        config,
+        open_report=config.get("open_report", True),
+        wait_for_close=config.get("wait_for_close", True),
+    )
 
 
 if __name__ == "__main__":

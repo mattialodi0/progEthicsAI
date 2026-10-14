@@ -8,6 +8,9 @@ import json
 import re
 from typing import Any
 
+import plotly.graph_objects as go
+
+from .plotly_helpers import chart, numeric
 
 def _matches(prompt: str, value: str) -> bool:
     pattern = r"(?<!\w)" + re.escape(value).replace(r"\ ", r"\s+") + r"(?!\w)"
@@ -154,87 +157,81 @@ def build_coverage(
     }
 
 
-def _table(headers: list[str], rows: list[list[Any]]) -> str:
-    head = "".join(f"<th>{html.escape(str(value))}</th>" for value in headers)
-    body = "".join(
-        "<tr>" + "".join(f"<td>{html.escape(str(value))}</td>" for value in row) + "</tr>"
-        for row in rows
-    )
-    return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
-
-
-def _bar_table(values: dict[str, int]) -> str:
-    maximum = max(values.values(), default=0)
-    body = ""
-    for label, count in values.items():
-        width = 100 * count / maximum if maximum else 0
-        body += (
-            f'<tr><td>{html.escape(str(label))}</td><td>{count}</td><td>'
-            f'<div class="bar"><span style="width:{width:.2f}%"></span></div>'
-            "</td></tr>"
-        )
-    return (
-        "<table><thead><tr><th>Value</th><th>Images</th><th>Distribution</th>"
-        f"</tr></thead><tbody>{body}</tbody></table>"
-    )
-
-
-def _conditioning_plot(conditioned_images: dict[str, int], total: int) -> str:
-    """Render the share of generated images conditioned on each variable."""
-    rows = []
-    for attribute, count in conditioned_images.items():
-        percentage = 100 * count / total if total else 0
-        rows.append(
-            f'<div class="plot-row"><span class="plot-label">{html.escape(attribute)}</span>'
-            f'<div class="plot-track"><span style="width:{percentage:.2f}%"></span></div>'
-            f'<span class="plot-value">{percentage:.1f}% ({count})</span></div>'
-        )
-    return "".join(rows) or '<p class="note">No configured prompt variables found.</p>'
-
-
 def render_chapter_two(coverage: dict[str, Any]) -> str:
-    """Render chapter 2 as expandable, readable HTML tables."""
-    mode_rows = [[mode, count] for mode, count in coverage["mode_counts"].items()]
-    feature_rows = [
-        [
-            feature,
-            values["valid"],
-            values["total"],
-            f"{100 * values['valid'] / values['total']:.1f}%" if values["total"] else "0.0%",
-        ]
-        for feature, values in coverage["valid_detection"].items()
-    ]
-    missing = coverage["missing_outputs"]
-    prompt_rows = [[prompt, count] for prompt, count in coverage["prompt_images"].items()]
+    """Render chapter 2 with interactive Plotly charts."""
+    mode_counts = coverage["mode_counts"]
+    mode_chart = chart(
+        go.Figure(go.Bar(x=list(mode_counts), y=list(mode_counts.values()))),
+        title="Images by prompt mode",
+    )
+    detection = coverage["valid_detection"]
+    features = list(detection)
+    detection_chart = chart(
+        go.Figure(
+            [
+                go.Bar(name="Valid", x=features, y=[detection[name]["valid"] for name in features]),
+                go.Bar(name="Missing", x=features, y=[
+                    detection[name]["total"] - detection[name]["valid"] for name in features
+                ]),
+            ]
+        ),
+        title="Feature detection coverage",
+    )
+    prompt_counts = coverage["prompt_images"]
+    prompt_chart = (
+        "<details class='prompt-list'>"
+        "<summary>Show all prompts</summary>"
+        "<ul>"
+        + "".join(
+            f"<li>{html.escape(prompt)} "
+            f"<span class='note'>({count} images)</span></li>"
+            for prompt, count in prompt_counts.items()
+        )
+        + "</ul></details>"
+        if prompt_counts
+        else '<p class="note">No prompts found.</p>'
+    )
     attribute_sections = "".join(
-        f"<details><summary>{html.escape(attribute)}</summary>{_bar_table(values)}</details>"
+        f"<article class='plot-card'><h4>{html.escape(attribute)}</h4>"
+        f"{chart(go.Figure(go.Bar(x=list(values), y=list(values.values()))), title='Configured values')}</article>"
         for attribute, values in coverage["attribute_counts"].items()
     )
-    prompt_html = _table(["Prompt", "Images"], prompt_rows) if prompt_rows else "<p>No prompts found.</p>"
+    conditioned = coverage["conditioned_images"]
+    conditioning_chart = chart(
+        go.Figure(go.Bar(
+            x=list(conditioned.values()),
+            y=list(conditioned),
+            orientation="h",
+            customdata=[
+                100 * numeric(value) / sum(mode_counts.values())
+                if sum(mode_counts.values()) else 0
+                for value in conditioned.values()
+            ],
+            hovertemplate="%{y}: %{x} images (%{customdata:.1f}%)<extra></extra>",
+        )),
+        title="Images conditioned by prompt variable",
+    ) if conditioned else '<p class="note">No configured prompt variables found.</p>'
     return f"""
   <div class="eyebrow">Chapter 2</div>
   <h2 id="chapter-2">Dataset and generation coverage</h2>
   <p class="note">This chapter describes what was actually tested. Counts are
   based on metadata records and prompt text; missing detections are not treated
   as evidence that an attribute is absent from an image.</p>
-  <section><h3>Prompts by mode</h3>{_table(["Mode", "Images"], mode_rows)}</section>
+  <section><h3>Prompts by mode</h3>{mode_chart}</section>
   <section id="chapter-2-attributes"><h3>Prompt attributes</h3>
     <p class="note">Bars show the relative number of generated images whose
     prompt contains each configured value.</p>
     <h4>Images conditioned by prompt variable</h4>
-    <div class="conditioning-plot" role="img"
-      aria-label="Percentage of generated images conditioned by each prompt variable">
-      {_conditioning_plot(coverage["conditioned_images"], sum(coverage["mode_counts"].values()))}
-    </div>
+    {conditioning_chart}
     {attribute_sections}
   </section>
   <section id="chapter-2-prompts"><h3>Images per prompt</h3>
     <p>{len(coverage["prompt_images"])} unique prompts produced
     {sum(coverage["prompt_images"].values())} images.</p>
-    <details><summary>Show prompt image counts</summary>{prompt_html}</details>
+    {prompt_chart}
   </section>
   <section id="chapter-2-detections"><h3>Valid detection rate by extracted feature</h3>
-    {_table(["Feature", "Valid", "Total", "Rate"], feature_rows)}
+    {detection_chart}
   </section>
   <section id="chapter-2-settings"><h3>Generation settings distribution</h3>
     <pre>{html.escape(str(coverage["generation_settings_distribution"]))}</pre>

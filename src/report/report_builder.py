@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+import webbrowser
 
 from .report_ch_1 import render_chapter_one
 from .report_ch_2 import build_coverage, render_chapter_two
@@ -16,12 +17,18 @@ def build_report(
     data: list[dict[str, Any]],
     analysis_results: dict[str, Any],
     config: dict[str, Any],
+    *,
+    open_report: bool = True,
+    wait_for_close: bool = True,
 ) -> Path:
-    """Write the interactive fairness report and return its path.
+    """Render, open, and optionally keep the analysis process alive.
 
     Each chapter owns its data preparation and HTML rendering in a separate
     module.  The builder only validates inputs, assembles the document, and
     exposes structured data to future interactive chapters.
+
+    ``open_report`` and ``wait_for_close`` are explicit so notebooks and tests
+    can render without blocking, while normal analysis runs remain interactive.
     """
     if not isinstance(data, list):
         raise TypeError("data must be a list")
@@ -59,6 +66,7 @@ def build_report(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Fairness report</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <style>
     :root {{ color-scheme: light; font-family: system-ui, sans-serif; }}
     body {{ background: #f4f6f8; color: #17202a; margin: 0; }}
@@ -183,4 +191,11 @@ def build_report(
 """,
         encoding="utf-8",
     )
+    if open_report:
+        webbrowser.open(report_path.resolve().as_uri())
+        if wait_for_close:
+            try:
+                input("Fairness report is open. Press Enter when you are finished viewing it. ")
+            except EOFError:
+                pass
     return report_path
