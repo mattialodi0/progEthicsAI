@@ -1,12 +1,4 @@
-"""General statistics extracted from preprocessed image metadata.
-
-The functions in this module accept the dictionaries produced by
-``preprocessing.preprocess_data``.  They also tolerate partially populated
-records so that one malformed model result does not discard the whole report.
-"""
-
 from __future__ import annotations
-
 from collections import Counter, defaultdict
 from itertools import combinations
 from math import sqrt
@@ -14,30 +6,11 @@ import re
 from typing import Any
 
 
-_ATTRIBUTES = ("gender", "race", "age", "emotion")
-_PROMPT_ATTRIBUTES = (
-    "gender",
-    "age",
-    "race",
-    "emotion",
-    "job",
-    "workplace",
-    "continent",
-    "status",
-    "toxic_trait",
-    "positive_trait",
-)
-
-
-def _records(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    if not isinstance(data, list):
-        raise TypeError("data must be a list of image metadata objects")
-    return [item for item in data if isinstance(item, dict)]
+MAIN_ATTRIBUTES = ("gender", "race", "age", "emotion")
 
 
 def _percentage(count: int, total: int) -> float:
     return round(100.0 * count / total, 4) if total else 0.0
-
 
 def _distribution(values: list[str], total: int | None = None) -> dict[str, Any]:
     counts = Counter(values)
@@ -49,7 +22,6 @@ def _distribution(values: list[str], total: int | None = None) -> dict[str, Any]
         },
         "missing": max(0, denominator - len(values)),
     }
-
 
 def _age_label(age: Any) -> str | None:
     if isinstance(age, str):
@@ -118,81 +90,75 @@ def _embedding(record: dict[str, Any]) -> list[float] | None:
         return None
     return result if all(map(lambda item: item == item, result)) else None
 
-
 def _distance(first: list[float], second: list[float]) -> float:
     length = min(len(first), len(second))
     if not length:
         return 0.0
     return sqrt(sum((first[index] - second[index]) ** 2 for index in range(length)))
 
-
 def _mean_pairwise_distance(vectors: list[list[float]]) -> float | None:
     distances = [_distance(left, right) for left, right in combinations(vectors, 2)]
     return round(sum(distances) / len(distances), 6) if distances else None
 
 
-def collect_all_stats(
+def collect_general_stats(
     data: list[dict[str, Any]],
-    verbose: int = 0,
-    include_embedding_metrics: bool = True,
+    config: dict[str, Any],
 ) -> dict[str, Any]:
     """Return every supported statistic in one JSON-serialisable dictionary."""
-    records = _records(data)
-    result = {
-        "invalid_images": invalid_images(records),
-        "demographics": demographics(records),
-        "prompt_adherence": prompt_adherence(records),
-    }
-    if include_embedding_metrics:
-        result["diversity"] = diversity(records)
-        result["cluster_separability"] = cluster_separability(records)
-    if verbose > 1:
-        print(f"Collected statistics for {len(records)} images.")
-    return result
 
+    verbose = config.get('verbose', 0)
+    attributes = config.get('prompt_variables', {}).keys() if isinstance(config.get('prompt_variables'), dict) else []
+
+    result = {
+        "invalid_images": invalid_images(data),
+        "demographics": demographics(data),
+        "prompt_adherence": prompt_adherence(data, attributes),
+        "diversity": diversity(data, attributes),
+        "cluster_separability": cluster_separability(data, attributes),
+    }
+
+    if verbose > 1:
+        print(f"Collected statistics for {len(data)} images.")
+    return result
 
 def invalid_images(data: list[dict[str, Any]]) -> dict[str, Any]:
     """Count images without a valid detected face and identify them."""
-    records = _records(data)
+    data = data
     invalid = [
         (index, record.get("name"))
-        for index, record in enumerate(records)
+        for index, record in enumerate(data)
         if record.get("valid") is not True
     ]
     return {
         "count": len(invalid),
-        "total": len(records),
-        "rate": _percentage(len(invalid), len(records)),
+        "total": len(data),
         "indices": [index for index, _ in invalid],
-        "names": [name for _, name in invalid if name is not None],
     }
-
 
 def demographics(data: list[dict[str, Any]]) -> dict[str, Any]:
     """Return detected gender, race, age and emotion distributions."""
-    records = _records(data)
+    data = data
     result: dict[str, Any] = {}
-    for attribute in _ATTRIBUTES:
+    for attribute in MAIN_ATTRIBUTES:
         values = [
-            value for record in records
+            value for record in data
             if (value := _detected_value(record, attribute)) is not None
         ]
-        result[attribute] = _distribution(values, len(records))
+        result[attribute] = _distribution(values, len(data))
     return result
 
-
-def diversity(data: list[dict[str, Any]]) -> dict[str, Any]:
+def diversity(data: list[dict[str, Any]], attributes: list[str]) -> dict[str, Any]:
     """Measure mean pairwise embedding distance within each prompt group.
 
     ``coverage`` is the fraction of non-empty prompt groups represented in the
     data.  ``mean_pairwise_distance`` is ``None`` when a group has fewer than
     two usable image embeddings.
     """
-    records = _records(data)
     result: dict[str, Any] = {}
-    for attribute in _PROMPT_ATTRIBUTES:
+    for attribute in attributes:
         groups: defaultdict[str, list[list[float]]] = defaultdict(list)
-        for record in records:
+        for record in data:
             prompt_feats = record.get("prompt_feats", {})
             group = prompt_feats.get(attribute) if isinstance(prompt_feats, dict) else None
             vector = _embedding(record)
@@ -208,27 +174,25 @@ def diversity(data: list[dict[str, Any]]) -> dict[str, Any]:
             },
             "coverage": _percentage(len(groups), len({
                 str(record.get("prompt_feats", {}).get(attribute)).lower()
-                for record in records
+                for record in data
                 if isinstance(record.get("prompt_feats"), dict)
                 and record["prompt_feats"].get(attribute) is not None
             })),
         }
     return result
 
-
-def prompt_adherence(data: list[dict[str, Any]]) -> dict[str, Any]:
+def prompt_adherence(data: list[dict[str, Any]], attributes: list[str]) -> dict[str, Any]:
     """Build prompt/detection confusion matrices for every supported attribute."""
-    records = _records(data)
     result: dict[str, Any] = {}
-    for attribute in _PROMPT_ATTRIBUTES:
+    for attribute in attributes:
         matrix: defaultdict[str, Counter[str]] = defaultdict(Counter)
         total = correct = 0
-        for record in records:
+        for record in data:
             prompt_feats = record.get("prompt_feats", {})
             prompt = prompt_feats.get(attribute) if isinstance(prompt_feats, dict) else None
             detected = (
                 _detected_value(record, attribute)
-                if attribute in _ATTRIBUTES
+                if attribute in MAIN_ATTRIBUTES
                 else _detected_prompt_value(record, prompt)
             )
             if prompt is None or detected is None:
@@ -246,18 +210,16 @@ def prompt_adherence(data: list[dict[str, Any]]) -> dict[str, Any]:
                        for row in labels},
             "total": total,
             "accuracy": round(correct / total, 6) if total else None,
-            "unmatched": len(records) - total,
+            "unmatched": len(data) - total,
         }
     return result
 
-
-def cluster_separability(data: list[dict[str, Any]]) -> dict[str, Any]:
+def cluster_separability(data: list[dict[str, Any]], attributes: list[str]) -> dict[str, Any]:
     """Estimate embedding cluster separability using the silhouette coefficient."""
-    records = _records(data)
     result: dict[str, Any] = {}
-    for attribute in _PROMPT_ATTRIBUTES:
+    for attribute in attributes:
         groups: defaultdict[str, list[list[float]]] = defaultdict(list)
-        for record in records:
+        for record in data:
             prompt_feats = record.get("prompt_feats", {})
             value = prompt_feats.get(attribute) if isinstance(prompt_feats, dict) else None
             vector = _embedding(record)

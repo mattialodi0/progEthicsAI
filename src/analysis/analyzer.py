@@ -1,9 +1,9 @@
 import gzip
 import json
-from preprocessing import preprocess
-from prompt_statistics import collect_prompt_stats
-from gen_statistics import collect_all_stats
-from report_builder import build_report
+from .preprocessing import preprocess
+from .prompt_statistics import collect_prompt_stats
+from .general_statistics import collect_general_stats
+from ..report.report_builder import build_report
 
 
 def run_analysis(data, config):
@@ -22,14 +22,16 @@ def run_analysis(data, config):
     preprocessed_data = preprocess(data)
 
     # Collect prompt statistics
-    prompt_stats = collect_prompt_stats(preprocessed_data, verbose)
-    
+    prompt_stats = collect_prompt_stats(preprocessed_data, config=config)
+
     # Collect general statistics
-    gen_stats = collect_all_stats(preprocessed_data, verbose)
+    general_stats = collect_general_stats(preprocessed_data, config=config)
+    print(general_stats)
+
 
     analysis_results = {
         'prompt_stats': prompt_stats,
-        'gen_stats': gen_stats
+        'general_stats': general_stats
     }
 
     # Build the report
@@ -37,13 +39,16 @@ def run_analysis(data, config):
 
 
 if __name__ == "__main__":
+
+    config_path = './assets/config.json'
+    with open(config_path, 'r') as f:
+        config = json.load(f)
     
     metadata_json_path = './assets/all_metadata.json.gz'
     with gzip.open(metadata_json_path, 'rt', encoding='utf-8') as f:
         data = json.load(f)
+    
+    config['verbose'] = 2
+    config['report_dir'] = './assets/report'
 
-    config = {
-        'verbose': 2
-    }
-
-    run_analysis(data, config)
+    run_analysis(data[:100], config)
