@@ -8,6 +8,8 @@ from typing import Any
 
 from .report_ch_1 import render_chapter_one
 from .report_ch_2 import build_coverage, render_chapter_two
+from .report_ch_3 import build_demographic_diversity, render_chapter_three
+from .report_ch_4 import render_chapter_four
 
 
 def build_report(
@@ -31,9 +33,16 @@ def build_report(
     chapter_one = render_chapter_one(data, analysis_results, config)
     coverage = build_coverage(data, config)
     chapter_two = render_chapter_two(coverage)
+    chapter_three_data = build_demographic_diversity(analysis_results, config)
+    chapter_three = render_chapter_three(chapter_three_data)
+    chapter_four = render_chapter_four(analysis_results)
     report_data = {
         "chapter_1": chapter_one.data,
         "chapter_2": coverage,
+        "chapter_3": chapter_three_data,
+        "chapter_4": analysis_results.get("general_stats", {}).get(
+            "prompt_adherence", {}
+        ),
     }
     serialized_data = json.dumps(report_data, ensure_ascii=True).replace("</", "<\\/")
 
@@ -97,6 +106,21 @@ def build_report(
     .plot-track span {{ background: #486581; display: block; height: 100%; }}
     .placeholder {{ border-left: 4px solid #829ab1; color: #52606d; padding-left: 1rem; }}
     .note {{ color: #52606d; font-size: .95rem; }}
+    .checkbox-grid {{ display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; }}
+    .checkbox-grid label {{ cursor: pointer; }}
+    .plot-card {{ background: #fff; border: 1px solid #d9e2ec; border-radius: 8px;
+      margin-top: 1rem; padding: 1rem; }}
+    .plot-grid {{ display: grid; gap: 1rem; grid-template-columns:
+      repeat(auto-fit, minmax(320px, 1fr)); }}
+    .svg-figure {{ margin: .75rem 0; min-width: 0; }}
+    .svg-figure svg {{ background: #f8fafc; border: 1px solid #d9e2ec;
+      border-radius: 6px; display: block; max-width: 100%; min-height: 80px;
+      width: 100%; }}
+    .svg-label {{ fill: #243b53; font-size: 13px; }}
+    .svg-value {{ fill: #243b53; font-size: 12px; }}
+    .plot-legend {{ display: inline-block; font-size: .82rem; margin: .35rem .75rem 0 0; }}
+    .plot-legend i {{ border-radius: 2px; display: inline-block; height: .75rem;
+      margin-right: .3rem; vertical-align: -.1rem; width: .75rem; }}
   </style>
 </head>
 <body>
@@ -115,6 +139,15 @@ def build_report(
       <a class="subitem" href="#chapter-2-prompts" data-section-link="chapter-2-prompts">Images per prompt</a>
       <a class="subitem" href="#chapter-2-detections" data-section-link="chapter-2-detections">Detection rates</a>
       <a class="subitem" href="#chapter-2-settings" data-section-link="chapter-2-settings">Generation settings</a>
+      <a href="#chapter-3" data-section-link="chapter-3">3. Demographic representation and diversity</a>
+      <a class="subitem" href="#chapter-3-controls" data-section-link="chapter-3-controls">Prompt modes</a>
+      <a class="subitem" href="#chapter-3-distributions" data-section-link="chapter-3-distributions">Demographic distributions</a>
+      <a class="subitem" href="#chapter-3-diversity" data-section-link="chapter-3-diversity">Diversity</a>
+      <a href="#chapter-4" data-section-link="chapter-4">4. Prompt adherence</a>
+      <a class="subitem" href="#chapter-4-attributes" data-section-link="chapter-4-attributes">Overall adherence</a>
+      <a class="subitem" href="#chapter-4-modes" data-section-link="chapter-4-modes">Prompt modes</a>
+      <a class="subitem" href="#chapter-4-demographics" data-section-link="chapter-4-demographics">Demographic categories</a>
+      <a class="subitem" href="#chapter-4-combinations" data-section-link="chapter-4-combinations">Attribute combinations</a>
     </nav>
   </aside>
   <main>
@@ -122,10 +155,13 @@ def build_report(
     <p class="subtitle">Interactive audit report</p>
     {chapter_one.html}
     {chapter_two}
+    {chapter_three}
+    {chapter_four}
   </main>
 </div>
 <script>
   const reportData = {serialized_data};
+  renderChapterThree();
   const reportSections = document.querySelectorAll("[data-section-link]");
   const sectionLinks = new Map(Array.from(reportSections).map((link) => [
     link.dataset.sectionLink, link

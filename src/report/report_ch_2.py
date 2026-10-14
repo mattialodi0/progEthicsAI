@@ -230,16 +230,11 @@ def render_chapter_two(coverage: dict[str, Any]) -> str:
   </section>
   <section id="chapter-2-prompts"><h3>Images per prompt</h3>
     <p>{len(coverage["prompt_images"])} unique prompts produced
-    {sum(coverage["prompt_images"].values())} images. Expand the list only when
-    prompt-level counts are needed.</p>
+    {sum(coverage["prompt_images"].values())} images.</p>
     <details><summary>Show prompt image counts</summary>{prompt_html}</details>
   </section>
   <section id="chapter-2-detections"><h3>Valid detection rate by extracted feature</h3>
     {_table(["Feature", "Valid", "Total", "Rate"], feature_rows)}
-    <h3>Missing outputs and failed generations</h3>
-    {_table(["Output", "Missing or failed"], [
-        [key.replace("_", " ").title(), value] for key, value in missing.items()
-    ])}
   </section>
   <section id="chapter-2-settings"><h3>Generation settings distribution</h3>
     <pre>{html.escape(str(coverage["generation_settings_distribution"]))}</pre>
