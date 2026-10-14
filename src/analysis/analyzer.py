@@ -26,7 +26,6 @@ def run_analysis(data, config):
 
     # Collect general statistics
     general_stats = collect_general_stats(preprocessed_data, config=config)
-    print(general_stats)
 
 
     analysis_results = {
@@ -51,4 +50,4 @@ if __name__ == "__main__":
     config['verbose'] = 2
     config['report_dir'] = './assets/report'
 
-    run_analysis(data[:100], config)
+    run_analysis(data, config)

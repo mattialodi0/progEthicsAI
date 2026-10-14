@@ -1,83 +1,13 @@
-"""Build the HTML fairness-audit report."""
+"""Build the HTML fairness-audit report from chapter renderers."""
 
 from __future__ import annotations
 
-from datetime import datetime
-import html
 import json
 from pathlib import Path
 from typing import Any
 
-
-_CONFIGURATION_KEYS = {
-    "T2I_model",
-    "model",
-    "model_name",
-    "model_version",
-    "version",
-    "generation_settings",
-    "generation",
-}
-
-
-def _first_config_value(config: dict[str, Any], *keys: str) -> Any:
-    for key in keys:
-        value = config.get(key)
-        if value is not None and value != "":
-            return value
-    return "Not specified"
-
-
-def _generation_settings(config: dict[str, Any]) -> dict[str, Any]:
-    settings = config.get("generation_settings", config.get("generation"))
-    if isinstance(settings, dict):
-        return settings
-
-    return {
-        key: config[key]
-        for key in sorted(config)
-        if key in _CONFIGURATION_KEYS
-        and key not in {"T2I_model", "model", "model_name", "model_version", "version"}
-    }
-
-
-def _summary(
-    data: list[dict[str, Any]],
-    analysis_results: dict[str, Any],
-    config: dict[str, Any],
-) -> dict[str, Any]:
-    prompt_stats = analysis_results.get("prompt_stats", {})
-    general_stats = analysis_results.get("general_stats", {})
-    invalid_images = general_stats.get("invalid_images", {})
-
-    generated_images = prompt_stats.get("num_images", len(data))
-    failed_features = invalid_images.get("count", 0)
-    if not isinstance(generated_images, int) or generated_images < 0:
-        raise ValueError("prompt_stats.num_images must be a non-negative integer")
-    if not isinstance(failed_features, int) or failed_features < 0:
-        raise ValueError("general_stats.invalid_images.count must be a non-negative integer")
-
-    return {
-        "model_name": _first_config_value(config, "model_name", "model", "T2I_model"),
-        "model_version": _first_config_value(config, "model_version", "version"),
-        "generation_settings": _generation_settings(config),
-        "audit_date": config.get(
-            "audit_date", datetime.now().astimezone().date().isoformat()
-        ),
-        "num_prompts": prompt_stats.get("num_unique_prompts", 0),
-        "generated_images": generated_images,
-        "valid_images": max(0, generated_images - failed_features),
-        "failed_feature_detections": failed_features,
-    }
-
-
-def _metric_card(label: str, value: Any) -> str:
-    return (
-        '<div class="metric">'
-        f'<span class="metric-label">{html.escape(label)}</span>'
-        f'<strong class="metric-value">{html.escape(str(value))}</strong>'
-        "</div>"
-    )
+from .report_ch_1 import render_chapter_one
+from .report_ch_2 import build_coverage, render_chapter_two
 
 
 def build_report(
@@ -85,19 +15,11 @@ def build_report(
     analysis_results: dict[str, Any],
     config: dict[str, Any],
 ) -> Path:
-    """Write the first chapter of the interactive audit report.
+    """Write the interactive fairness report and return its path.
 
-    The report is a standalone HTML file and does not require Plotly or a
-    running notebook.  Later chapters can reuse the embedded ``reportData``
-    object to add charts and analyses without changing the executive summary.
-
-    Args:
-        data: Image metadata records used by the audit.
-        analysis_results: Results returned by the analysis collectors.
-        config: Audit and report configuration.
-
-    Returns:
-        The path of the generated HTML report.
+    Each chapter owns its data preparation and HTML rendering in a separate
+    module.  The builder only validates inputs, assembles the document, and
+    exposes structured data to future interactive chapters.
     """
     if not isinstance(data, list):
         raise TypeError("data must be a list")
@@ -106,10 +28,14 @@ def build_report(
     if not isinstance(config, dict):
         raise TypeError("config must be a dictionary")
 
-    summary = _summary(data, analysis_results, config)
-    report_data = {"chapter": "Executive summary", **summary}
+    chapter_one = render_chapter_one(data, analysis_results, config)
+    coverage = build_coverage(data, config)
+    chapter_two = render_chapter_two(coverage)
+    report_data = {
+        "chapter_1": chapter_one.data,
+        "chapter_2": coverage,
+    }
     serialized_data = json.dumps(report_data, ensure_ascii=True).replace("</", "<\\/")
-    settings_json = json.dumps(summary["generation_settings"], indent=2, ensure_ascii=True)
 
     output_dir = Path(config.get("report_dir", "report"))
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -123,11 +49,11 @@ def build_report(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Fairness audit - Executive summary</title>
+  <title>Fairness report</title>
   <style>
     :root {{ color-scheme: light; font-family: system-ui, sans-serif; }}
     body {{ background: #f4f6f8; color: #17202a; margin: 0; }}
-    main {{ margin: 0 auto; max-width: 960px; padding: 2rem 1rem 4rem; }}
+    main {{ margin: 0 auto; max-width: 1100px; padding: 2rem 1rem 4rem; }}
     .eyebrow {{ color: #52606d; font-size: .8rem; font-weight: 700;
       letter-spacing: .08em; text-transform: uppercase; }}
     h1 {{ margin-bottom: .35rem; }} h2 {{ margin-top: 2rem; }}
@@ -141,51 +67,30 @@ def build_report(
       margin-top: .35rem; }} section, details {{ padding: 1rem 1.25rem; }}
     details {{ margin-top: 1rem; }} summary {{ cursor: pointer; font-weight: 700; }}
     pre {{ background: #f4f6f8; border-radius: 6px; overflow: auto; padding: 1rem; }}
+    table {{ border-collapse: collapse; margin-top: 1rem; width: 100%; }}
+    th, td {{ border-bottom: 1px solid #d9e2ec; padding: .55rem; text-align: left; }}
+    th {{ color: #52606d; font-size: .85rem; }} .bar {{ background: #d9e2ec;
+      border-radius: 99px; height: .55rem; min-width: 3rem; overflow: hidden; }}
+    .bar span {{ background: #486581; display: block; height: 100%; }}
+    .conditioning-plot {{ display: grid; gap: .65rem; margin: 1rem 0; }}
+    .plot-row {{ align-items: center; display: grid; gap: .75rem;
+      grid-template-columns: minmax(110px, 1fr) 3fr auto; }}
+    .plot-label, .plot-value {{ font-size: .9rem; }} .plot-value {{ color: #52606d;
+      min-width: 90px; text-align: right; }} .plot-track {{ background: #d9e2ec;
+      border-radius: 99px; height: .7rem; overflow: hidden; }}
+    .plot-track span {{ background: #486581; display: block; height: 100%; }}
     .placeholder {{ border-left: 4px solid #829ab1; color: #52606d; padding-left: 1rem; }}
     .note {{ color: #52606d; font-size: .95rem; }}
   </style>
 </head>
 <body>
 <main>
-  <div class="eyebrow">Chapter 1</div>
-  <h1>Executive summary</h1>
-  <p class="subtitle">Image-generation fairness audit - audit date: {html.escape(str(summary["audit_date"]))}</p>
-
-  <section aria-labelledby="model-heading">
-    <h2 id="model-heading">Model and audit configuration</h2>
-    <p><strong>Model:</strong> {html.escape(str(summary["model_name"]))}</p>
-    <p><strong>Version:</strong> {html.escape(str(summary["model_version"]))}</p>
-    <details>
-      <summary>Show generation settings</summary>
-      <pre>{html.escape(settings_json)}</pre>
-    </details>
-  </section>
-
-  <h2>Audit coverage</h2>
-  <div class="metrics">
-    {_metric_card("Prompts", summary["num_prompts"])}
-    {_metric_card("Generated images", summary["generated_images"])}
-    {_metric_card("Valid images", summary["valid_images"])}
-    {_metric_card("Failed feature detections", summary["failed_feature_detections"])}
-  </div>
-
-  <section aria-labelledby="fairness-heading">
-    <h2 id="fairness-heading">Fairness overview</h2>
-    <p class="placeholder">Fairness findings will be added in a later chapter.</p>
-  </section>
-
-  <section aria-labelledby="scope-heading">
-    <h2 id="scope-heading">What this audit establishes</h2>
-    <p>This audit summarizes the generated sample and the feature detections
-    available from the configured analysis pipeline. It can identify patterns
-    and disparities in this dataset under these prompts and generation settings.</p>
-    <p class="note">It cannot establish that the model is fair or unfair in
-    general, prove causal bias, or predict results for prompts, populations,
-    models, or settings not represented in this audit.</p>
-  </section>
+  <h1>Fairness report</h1>
+  <p class="subtitle">Interactive audit report</p>
+  {chapter_one.html}
+  {chapter_two}
 </main>
 <script>
-  // Expose structured results for the interactive chapters added later.
   const reportData = {serialized_data};
 </script>
 </body>
