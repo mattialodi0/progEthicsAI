@@ -165,6 +165,7 @@ def build_report(
       <a class="subitem" href="#chapter-4-combinations" data-section-link="chapter-4-combinations">Attribute combinations</a>
       <a href="#chapter-5" data-section-link="chapter-5">5. Conditional distributions</a>
       <a class="subitem" href="#chapter-5-single-variable" data-section-link="chapter-5-single-variable">Single-variable associations</a>
+      <a class="subitem" href="#chapter-5-double-variable" data-section-link="chapter-5-double-variable">Double-variable associations</a>
     </nav>
   </aside>
   <main>
