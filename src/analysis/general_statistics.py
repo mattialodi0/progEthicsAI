@@ -32,7 +32,7 @@ def _age_label(age: Any) -> str | None:
     if isinstance(age, (int, float)) and not isinstance(age, bool):
         if age < 30:
             return "young"
-        if age < 60:
+        if age < 50:
             return "middle-aged"
         return "old"
     return None
@@ -535,6 +535,17 @@ def _adherence_combinations(
             "attributes": [first, second],
             "labels": labels,
             "matrix": {
+                row: {
+                    column: round(
+                        matrix[row].get(column, 0) / sum(matrix[row].values()), 6
+                    )
+                    if sum(matrix[row].values())
+                    else 0.0
+                    for column in labels
+                }
+                for row in labels
+            },
+            "counts": {
                 row: {column: matrix[row].get(column, 0) for column in labels}
                 for row in labels
             },

@@ -55,9 +55,8 @@ def render_chapter_three(chapter_data: dict[str, Any]) -> str:
   </section>
   <section id="chapter-3-diversity" aria-labelledby="chapter-3-diversity-heading">
     <h3 id="chapter-3-diversity-heading">3.2 Diversity</h3>
-    <p>Each variable has its own plot section so values can be compared without
-    scanning a wide table. Embedding dispersion, similarity, entropy, and content
-    variety describe different aspects of diversity.</p>
+    <p>Each metric is shown as a compact, consistently scaled bar chart. Empty
+    metrics and groups are omitted rather than rendered as misleading zeroes.</p>
     <div id="chapter-3-diversity-scores"></div>
     <div id="chapter-3-rare-categories"></div>
     <div id="chapter-3-sample-count"></div>
@@ -83,30 +82,28 @@ def render_chapter_three(chapter_data: dict[str, Any]) -> str:
       return {{counts, percentages: Object.fromEntries(Object.entries(counts).map(
         ([label, count]) => [label, total ? 100 * count / total : 0]))}};
     }};
-    const chapterThreeSvgComposition = (distribution) => {{
-      const values = Object.entries(distribution.percentages || {{}});
-      const width = 760;
-      const barHeight = 48;
-      let offset = 0;
-      const segments = values.map(([label, value], index) => {{
-        const segmentWidth = width * Number(value) / 100;
-        const x = offset;
-        offset += segmentWidth;
-        return `<rect x="${{x}}" y="12" width="${{segmentWidth}}" height="${{barHeight}}"
-          fill="${{chapterThreePalette[index % chapterThreePalette.length]}}">
-          <title>${{label}}: ${{Number(value).toFixed(1)}}%</title></rect>`;
-      }}).join("");
+    const chapterThreeComposition = (dimension, distribution) => {{
+      const counts = Object.entries(distribution.counts || {{}})
+        .filter(([, count]) => Number(count) > 0);
+      const total = counts.reduce((sum, [, count]) => sum + Number(count), 0);
+      if (!total) return '<p class="note">No detected observations.</p>';
+      const values = counts.map(([label, count]) => [label, 100 * Number(count) / total]);
+      const gradient = values.map(([, value], index) => {{
+        const start = values.slice(0, index).reduce((sum, [, item]) => sum + item, 0);
+        return `${{chapterThreePalette[index % chapterThreePalette.length]}} ${{start}}% ${{start + value}}%`;
+      }}).join(", ");
       const legend = values.map(([label, value], index) =>
         `<span class="plot-legend"><i style="background:${{
           chapterThreePalette[index % chapterThreePalette.length]}}"></i>${{label}}
-        (${{Number(value).toFixed(1)}}%)</span>`).join("");
-      return `<figure class="svg-figure"><svg viewBox="0 0 ${{width}} 72"
-        role="img" aria-label="Detected demographic composition">${{segments}}</svg>
-        <figcaption>${{legend || "No detected observations"}}</figcaption></figure>`;
+        (${{value.toFixed(1)}}%)</span>`).join("");
+      return `<div class="pie-layout"><div class="pie-chart" style="background:conic-gradient(${{
+        gradient}})" role="img" aria-label="${{dimension}} distribution"></div>
+        <div>${{legend}}</div></div>`;
     }};
     const chapterThreeMetricSvg = (entries, metric, label, color) => {{
       const values = entries.map(([name, stats]) => [
-        name, Number(stats[metric] ?? 0)]).filter(([, value]) => Number.isFinite(value));
+        name, Number(stats[metric])]).filter(([, value]) => Number.isFinite(value));
+      if (!values.length) return "";
       const max = Math.max(...values.map(([, value]) => value), 1);
       const rowHeight = 38;
       const chartWidth = 720;
@@ -133,8 +130,9 @@ def render_chapter_three(chapter_data: dict[str, Any]) -> str:
           const item = chapterThreeData.composition[dimension] || {{}};
           const slices = Object.entries(item.by_slice?.prompt_mode || {{}})
             .filter(([mode]) => selected.has(mode)).map(([, value]) => value);
+          const distribution = chapterThreeCombineDetected(slices);
           return `<article class="plot-card"><h4>${{dimension}}</h4>
-            ${{chapterThreeSvgComposition(chapterThreeCombineDetected(slices))}}
+            ${{chapterThreeComposition(dimension, distribution)}}
             </article>`;
         }}).join("");
 
@@ -150,33 +148,38 @@ def render_chapter_three(chapter_data: dict[str, Any]) -> str:
             captions: stats.caption_unique,
             objects: stats.object_unique
           }}]);
-          return `<article class="plot-card"><h4>${{type.replaceAll("_", " ")}}</h4>
+          const plots = [
+            chapterThreeMetricPlot(diversityEntries, "dispersion",
+              "Embedding dispersion", "#0072B2"),
+            chapterThreeMetricPlot(diversityEntries, "similarity",
+              "Mean pairwise similarity", "#D55E00"),
+            chapterThreeMetricPlot(diversityEntries, "entropy",
+              "Normalized gender entropy", "#009E73"),
+            chapterThreeMetricPlot(diversityEntries, "captions",
+              "Unique captions", "#CC79A7"),
+            chapterThreeMetricPlot(diversityEntries, "objects",
+              "Unique objects", "#E69F00")
+          ].filter(Boolean).join("");
+          return plots ? `<article class="plot-card"><h4>${{type.replaceAll("_", " ")}}</h4>
             <div class="plot-grid">
-              ${{chapterThreeMetricPlot(diversityEntries, "dispersion",
-                "Embedding dispersion", "#0072B2")}}
-              ${{chapterThreeMetricPlot(diversityEntries, "similarity",
-                "Mean pairwise similarity", "#D55E00")}}
-              ${{chapterThreeMetricPlot(diversityEntries, "entropy",
-                "Normalized gender entropy", "#009E73")}}
-              ${{chapterThreeMetricPlot(diversityEntries, "captions",
-                "Unique captions", "#CC79A7")}}
-              ${{chapterThreeMetricPlot(diversityEntries, "objects",
-                "Unique objects", "#E69F00")}}
-            </div></article>`;
+              ${{plots}}
+            </div></article>` : "";
         }}).join("") || '<p class="note">No diversity observations.</p>';
 
       const rare = chapterThreeData.diversity.rare_categories || {{}};
+      const rareEntries = Object.entries(rare).map(([name, values]) =>
+        [name, {{frequency: Array.isArray(values) ? values.length : 0}}])
+        .filter(([, stats]) => stats.frequency > 0);
       document.getElementById("chapter-3-rare-categories").innerHTML =
-        `<article class="plot-card"><h4>Rare-category frequency</h4>
-        ${{chapterThreeMetricPlot(Object.entries(rare).map(([name, values]) =>
-          [name, {{frequency: values.length}}]), "frequency",
-          "Categories occurring once", "#332288")}}</article>`;
+        rareEntries.length ? `<article class="plot-card"><h4>Rare-category frequency</h4>
+        ${{chapterThreeMetricPlot(rareEntries, "frequency",
+          "Categories occurring once", "#332288")}}</article>` : "";
       const sampleCounts = chapterThreeData.diversity.by_sample_count || [];
-      document.getElementById("chapter-3-sample-count").innerHTML =
+      document.getElementById("chapter-3-sample-count").innerHTML = sampleCounts.length ?
         `<article class="plot-card"><h4>Diversity versus sample count</h4>
         ${{chapterThreeMetricPlot(sampleCounts.map((entry) => [
           String(entry.sample_count), {{dispersion: entry.mean_embedding_dispersion}}]),
-          "dispersion", "Mean embedding dispersion", "#117733")}}</article>`;
+          "dispersion", "Mean embedding dispersion", "#117733")}}</article>` : "";
     }}
     chapterThreeData.prompt_modes.forEach((mode, index) => {{
       const label = document.createElement("label");

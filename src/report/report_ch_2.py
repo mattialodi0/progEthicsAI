@@ -158,7 +158,7 @@ def build_coverage(
 
 
 def render_chapter_two(coverage: dict[str, Any]) -> str:
-    """Render chapter 2 with interactive Plotly charts."""
+    """Render chapter 2 with compact charts and inline summaries."""
     mode_counts = coverage["mode_counts"]
     mode_chart = chart(
         go.Figure(go.Bar(x=list(mode_counts), y=list(mode_counts.values()))),
@@ -166,16 +166,25 @@ def render_chapter_two(coverage: dict[str, Any]) -> str:
     )
     detection = coverage["valid_detection"]
     features = list(detection)
-    detection_chart = chart(
-        go.Figure(
-            [
-                go.Bar(name="Valid", x=features, y=[detection[name]["valid"] for name in features]),
-                go.Bar(name="Missing", x=features, y=[
-                    detection[name]["total"] - detection[name]["valid"] for name in features
-                ]),
-            ]
-        ),
-        title="Feature detection coverage",
+    total = max((detection[name]["total"] for name in features), default=0)
+    def detection_row(name: str) -> str:
+        item = detection[name]
+        percent = 100 * numeric(item["valid"]) / item["total"] if item["total"] else 0
+        return (
+            f"<tr><th scope='row'>{html.escape(name)}</th>"
+            f"<td>{item['valid']}/{item['total']}</td>"
+            f"<td><div class='bar' role='img' aria-label='{item['valid']} valid "
+            f"out of {item['total']}'><span style='width:{percent:.1f}%'></span>"
+            f"</div></td><td>{percent:.1f}%</td></tr>"
+        )
+    detection_rows = "".join(
+        detection_row(name)
+        for name in features
+    )
+    detection_table = (
+        "<table><thead><tr><th>Feature</th><th>Valid / total</th>"
+        "<th>Rate</th><th>Percent</th></tr></thead><tbody>"
+        f"{detection_rows}</tbody></table>"
     )
     prompt_counts = coverage["prompt_images"]
     prompt_chart = (
@@ -191,9 +200,24 @@ def render_chapter_two(coverage: dict[str, Any]) -> str:
         if prompt_counts
         else '<p class="note">No prompts found.</p>'
     )
+    def attribute_section(attribute: str, values: dict[str, int]) -> str:
+        rows = ""
+        for value, count in values.items():
+            percent = 100 * numeric(count) / total if total else 0
+            rows += (
+                f"<tr><th scope='row'>{html.escape(str(value))}</th><td>{count}</td>"
+                f"<td><div class='bar'><span style='width:{percent:.1f}%'></span>"
+                "</div></td></tr>"
+            )
+        return (
+            "<article class='plot-card'><h4>"
+            f"{html.escape(attribute)}</h4><table><thead><tr><th>Value</th>"
+            "<th>Images</th><th>Share</th></tr></thead><tbody>"
+            f"{rows}</tbody></table></article>"
+        )
+
     attribute_sections = "".join(
-        f"<article class='plot-card'><h4>{html.escape(attribute)}</h4>"
-        f"{chart(go.Figure(go.Bar(x=list(values), y=list(values.values()))), title='Configured values')}</article>"
+        attribute_section(attribute, values)
         for attribute, values in coverage["attribute_counts"].items()
     )
     conditioned = coverage["conditioned_images"]
@@ -231,7 +255,7 @@ def render_chapter_two(coverage: dict[str, Any]) -> str:
     {prompt_chart}
   </section>
   <section id="chapter-2-detections"><h3>Valid detection rate by extracted feature</h3>
-    {detection_chart}
+    {detection_table}
   </section>
   <section id="chapter-2-settings"><h3>Generation settings distribution</h3>
     <pre>{html.escape(str(coverage["generation_settings_distribution"]))}</pre>

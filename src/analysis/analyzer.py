@@ -3,6 +3,7 @@ import json
 from .preprocessing import preprocess
 from .prompt_statistics import collect_prompt_stats
 from .general_statistics import collect_general_stats
+from .bias_statistics import collect_bias_stats
 from ..report.report_builder import build_report
 
 
@@ -26,11 +27,13 @@ def run_analysis(data, config):
 
     # Collect general statistics
     general_stats = collect_general_stats(preprocessed_data, config=config)
+    bias_stats = collect_bias_stats(preprocessed_data, config=config)
 
 
     analysis_results = {
         'prompt_stats': prompt_stats,
-        'general_stats': general_stats
+        'general_stats': general_stats,
+        'bias_stats': bias_stats
     }
 
     # Build the report

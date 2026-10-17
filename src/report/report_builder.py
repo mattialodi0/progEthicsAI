@@ -11,6 +11,7 @@ from .report_ch_1 import render_chapter_one
 from .report_ch_2 import build_coverage, render_chapter_two
 from .report_ch_3 import build_demographic_diversity, render_chapter_three
 from .report_ch_4 import render_chapter_four
+from .report_ch_5 import render_chapter_five
 
 
 def build_report(
@@ -43,6 +44,8 @@ def build_report(
     chapter_three_data = build_demographic_diversity(analysis_results, config)
     chapter_three = render_chapter_three(chapter_three_data)
     chapter_four = render_chapter_four(analysis_results)
+    bias_stats = analysis_results.get("bias_stats", {})
+    chapter_five = render_chapter_five(bias_stats)
     report_data = {
         "chapter_1": chapter_one.data,
         "chapter_2": coverage,
@@ -50,6 +53,7 @@ def build_report(
         "chapter_4": analysis_results.get("general_stats", {}).get(
             "prompt_adherence", {}
         ),
+        "chapter_5": bias_stats,
     }
     serialized_data = json.dumps(report_data, ensure_ascii=True).replace("</", "<\\/")
 
@@ -129,6 +133,9 @@ def build_report(
     .plot-legend {{ display: inline-block; font-size: .82rem; margin: .35rem .75rem 0 0; }}
     .plot-legend i {{ border-radius: 2px; display: inline-block; height: .75rem;
       margin-right: .3rem; vertical-align: -.1rem; width: .75rem; }}
+    .pie-layout {{ align-items: center; display: flex; flex-wrap: wrap; gap: 1.25rem; }}
+    .pie-chart {{ border: 1px solid #d9e2ec; border-radius: 50%; flex: 0 0 190px;
+      height: 190px; width: 190px; }}
   </style>
 </head>
 <body>
@@ -156,6 +163,8 @@ def build_report(
       <a class="subitem" href="#chapter-4-modes" data-section-link="chapter-4-modes">Prompt modes</a>
       <a class="subitem" href="#chapter-4-demographics" data-section-link="chapter-4-demographics">Demographic categories</a>
       <a class="subitem" href="#chapter-4-combinations" data-section-link="chapter-4-combinations">Attribute combinations</a>
+      <a href="#chapter-5" data-section-link="chapter-5">5. Conditional distributions</a>
+      <a class="subitem" href="#chapter-5-single-variable" data-section-link="chapter-5-single-variable">Single-variable associations</a>
     </nav>
   </aside>
   <main>
@@ -165,6 +174,7 @@ def build_report(
     {chapter_two}
     {chapter_three}
     {chapter_four}
+    {chapter_five}
   </main>
 </div>
 <script>
