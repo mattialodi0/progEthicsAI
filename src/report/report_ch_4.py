@@ -89,9 +89,8 @@ def _matrix(title: str, measurement: dict[str, Any]) -> str:
     )
 
 
-def render_chapter_four(analysis_results: dict[str, Any]) -> str:
+def render_chapter_four(adherence: dict[str, Any]) -> str:
     """Render measurements computed by the analysis pipeline."""
-    adherence = analysis_results.get("general_stats", {}).get("prompt_adherence", {})
     attributes = adherence.get("by_attribute", {})
     modes = adherence.get("by_prompt_mode", {})
     combinations = adherence.get("combinations", {})

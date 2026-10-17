@@ -8,51 +8,63 @@ from typing import Any
 import webbrowser
 
 from .report_ch_1 import render_chapter_one
-from .report_ch_2 import build_coverage, render_chapter_two
-from .report_ch_3 import build_demographic_diversity, render_chapter_three
+from .report_ch_2 import render_chapter_two
+from .report_ch_3 import render_chapter_three
 from .report_ch_4 import render_chapter_four
-from .report_ch_5 import render_chapter_five
+from .report_ch_5_1 import render_chapter_five
+from .report_ch_5_2 import render_stereotypical_associations
 
 
 def build_report(
-    data: list[dict[str, Any]],
-    analysis_results: dict[str, Any],
-    config: dict[str, Any],
+    analysis_artifact: dict[str, Any] | str | Path,
     *,
     open_report: bool = True,
     wait_for_close: bool = True,
 ) -> Path:
-    """Render, open, and optionally keep the analysis process alive.
+    """Render a previously saved analysis artifact.
 
-    Each chapter owns its data preparation and HTML rendering in a separate
-    module.  The builder only validates inputs, assembles the document, and
-    exposes structured data to future interactive chapters.
+    Analysis must be completed by ``analysis.analyzer`` first. The builder
+    intentionally does not accept raw metadata, so rendering is deterministic
+    and cannot accidentally repeat expensive feature analysis.
 
     ``open_report`` and ``wait_for_close`` are explicit so notebooks and tests
     can render without blocking, while normal analysis runs remain interactive.
     """
-    if not isinstance(data, list):
-        raise TypeError("data must be a list")
-    if not isinstance(analysis_results, dict):
-        raise TypeError("analysis_results must be a dictionary")
+    if isinstance(analysis_artifact, (str, Path)):
+        artifact_path = Path(analysis_artifact)
+        artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    elif isinstance(analysis_artifact, dict):
+        artifact = analysis_artifact
+    else:
+        raise TypeError("analysis_artifact must be a path or dictionary")
+    if artifact.get("schema_version") != 1:
+        raise ValueError("Unsupported analysis artifact schema version")
+    config = artifact.get("config")
+    analysis_results = artifact.get("analysis_results")
+    report_data = artifact.get("report_data")
     if not isinstance(config, dict):
-        raise TypeError("config must be a dictionary")
+        raise ValueError("Analysis artifact config must be a dictionary")
+    if not isinstance(analysis_results, dict):
+        raise ValueError("Analysis artifact analysis_results must be a dictionary")
+    if not isinstance(report_data, dict):
+        raise ValueError("Analysis artifact report_data must be a dictionary")
 
-    chapter_one = render_chapter_one(data, analysis_results, config)
-    coverage = build_coverage(data, config)
+    chapter_one = render_chapter_one(report_data["chapter_1"])
+    coverage = report_data["chapter_2"]
     chapter_two = render_chapter_two(coverage)
-    chapter_three_data = build_demographic_diversity(analysis_results, config)
+    chapter_three_data = report_data["chapter_3"]
     chapter_three = render_chapter_three(chapter_three_data)
-    chapter_four = render_chapter_four(analysis_results)
-    bias_stats = analysis_results.get("bias_stats", {})
-    chapter_five = render_chapter_five(bias_stats)
+    chapter_four = render_chapter_four(report_data["chapter_4"])
+    bias_stats = report_data["chapter_5"]
+    chapter_five = (
+        render_chapter_five(bias_stats)
+        + render_stereotypical_associations(bias_stats)
+    )
     report_data = {
         "chapter_1": chapter_one.data,
         "chapter_2": coverage,
         "chapter_3": chapter_three_data,
-        "chapter_4": analysis_results.get("general_stats", {}).get(
-            "prompt_adherence", {}
-        ),
+        "chapter_4": report_data["chapter_4"],
         "chapter_5": bias_stats,
     }
     serialized_data = json.dumps(report_data, ensure_ascii=True).replace("</", "<\\/")
@@ -79,13 +91,14 @@ def build_report(
     main {{ min-width: 0; }}
     .sidebar {{ align-self: start; position: sticky; top: 1rem; }}
     .sidebar nav {{ background: white; border: 1px solid #d9e2ec; border-radius: 8px;
-      box-shadow: 0 2px 5px #102a430d; padding: 1rem; }}
+      box-shadow: 0 2px 5px #102a430d; padding: 1rem; overflow-y: scroll; max-height: 90vh; }}
     .sidebar-title {{ color: #52606d; font-size: .8rem; font-weight: 700;
       letter-spacing: .08em; text-transform: uppercase; }}
     .sidebar a {{ border-left: 3px solid transparent; color: #334e68; display: block;
       padding: .45rem .6rem; text-decoration: none; }}
     .sidebar a:hover, .sidebar a.active {{ background: #f0f4f8;
       border-left-color: #486581; color: #102a43; }}
+    .sidebar .supitem {{ font-weight: bold; }}
     .sidebar .subitem {{ font-size: .9rem; padding-left: 1.25rem; }}
     @media (max-width: 800px) {{ .report-layout {{ display: block; }}
       .sidebar {{ margin-bottom: 1rem; position: static; }} .sidebar nav {{
@@ -144,28 +157,29 @@ def build_report(
     <nav>
       <div class="sidebar-title">Report index</div>
       <a href="#report-title" data-section-link="report-title">Fairness report</a>
-      <a href="#chapter-1" data-section-link="chapter-1">1. Executive summary</a>
+      <a class="supitem" href="#chapter-1" data-section-link="chapter-1">1. Executive summary</a>
       <a class="subitem" href="#chapter-1-model" data-section-link="chapter-1-model">Model and configuration</a>
       <a class="subitem" href="#chapter-1-coverage" data-section-link="chapter-1-coverage">Audit coverage</a>
       <a class="subitem" href="#chapter-1-fairness" data-section-link="chapter-1-fairness">Fairness overview</a>
       <a class="subitem" href="#chapter-1-scope" data-section-link="chapter-1-scope">Scope and limitations</a>
-      <a href="#chapter-2" data-section-link="chapter-2">2. Dataset and generation coverage</a>
+      <a class="supitem" href="#chapter-2" data-section-link="chapter-2">2. Dataset and generation coverage</a>
       <a class="subitem" href="#chapter-2-attributes" data-section-link="chapter-2-attributes">Prompt attributes</a>
       <a class="subitem" href="#chapter-2-prompts" data-section-link="chapter-2-prompts">Images per prompt</a>
       <a class="subitem" href="#chapter-2-detections" data-section-link="chapter-2-detections">Detection rates</a>
       <a class="subitem" href="#chapter-2-settings" data-section-link="chapter-2-settings">Generation settings</a>
-      <a href="#chapter-3" data-section-link="chapter-3">3. Demographic representation and diversity</a>
+      <a class="supitem" href="#chapter-3" data-section-link="chapter-3">3. Demographic representation and diversity</a>
       <a class="subitem" href="#chapter-3-controls" data-section-link="chapter-3-controls">Prompt modes</a>
       <a class="subitem" href="#chapter-3-distributions" data-section-link="chapter-3-distributions">Demographic distributions</a>
       <a class="subitem" href="#chapter-3-diversity" data-section-link="chapter-3-diversity">Diversity</a>
-      <a href="#chapter-4" data-section-link="chapter-4">4. Prompt adherence</a>
+      <a class="supitem" href="#chapter-4" data-section-link="chapter-4">4. Prompt adherence</a>
       <a class="subitem" href="#chapter-4-attributes" data-section-link="chapter-4-attributes">Overall adherence</a>
       <a class="subitem" href="#chapter-4-modes" data-section-link="chapter-4-modes">Prompt modes</a>
       <a class="subitem" href="#chapter-4-demographics" data-section-link="chapter-4-demographics">Demographic categories</a>
       <a class="subitem" href="#chapter-4-combinations" data-section-link="chapter-4-combinations">Attribute combinations</a>
-      <a href="#chapter-5" data-section-link="chapter-5">5. Conditional distributions</a>
+      <a class="supitem" href="#chapter-5" data-section-link="chapter-5">5. Conditional distributions and Association analysis</a>
       <a class="subitem" href="#chapter-5-single-variable" data-section-link="chapter-5-single-variable">Single-variable associations</a>
       <a class="subitem" href="#chapter-5-double-variable" data-section-link="chapter-5-double-variable">Double-variable associations</a>
+      <a class="subitem" href="#chapter-5-stereotypical" data-section-link="chapter-5-stereotypical">Stereotypical item associations</a>
     </nav>
   </aside>
   <main>
@@ -210,3 +224,24 @@ def build_report(
             except EOFError:
                 pass
     return report_path
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Render a fairness report from a saved analysis artifact."
+    )
+    parser.add_argument("analysis_artifact", help="Path to the analysis JSON file")
+    parser.add_argument("--no-open", action="store_true", help="Do not open the report")
+    parser.add_argument(
+        "--no-wait",
+        action="store_true",
+        help="Do not wait for input after opening the report",
+    )
+    args = parser.parse_args()
+    build_report(
+        args.analysis_artifact,
+        open_report=not args.no_open,
+        wait_for_close=not args.no_wait,
+    )

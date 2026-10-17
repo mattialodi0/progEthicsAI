@@ -1,5 +1,29 @@
 # A framework to measure fairness for text-to-image generative models
 
+## Two-step analysis and reporting
+
+Analysis and HTML rendering are separate steps. The analysis step reads the
+metadata, performs preprocessing and feature statistics, and writes a
+versioned JSON artifact. The report step reads only that artifact, so it does
+not reload the dataset or repeat expensive analysis.
+
+From the repository root:
+
+```powershell
+python -m src.analysis.analyzer
+python -m src.report.report_builder .\assets\analysis.json --no-wait
+```
+
+For library or notebook use:
+
+```python
+from src.analysis.analyzer import save_analysis
+from src.report.report_builder import build_report
+
+artifact_path = save_analysis(data, config, "assets/analysis.json")
+report_path = build_report(artifact_path, open_report=True, wait_for_close=True)
+```
+
 Features we can measure automatically:
 - race: DeepFace
 - gender: DeepFace

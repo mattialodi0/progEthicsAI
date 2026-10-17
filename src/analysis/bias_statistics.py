@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import math
 from io import BytesIO
 from collections import Counter, defaultdict
 from itertools import combinations
@@ -22,6 +23,102 @@ PROMPT_ATTRIBUTES = (
     "positive_trait",
 )
 OUTPUT_FEATURES = ("gender", "race", "age", "emotion")
+OBJECT_ASSOCIATION_ATTRIBUTES = ("job", "workplace")
+NON_OBJECT_LABELS = {
+    "face",
+    "human face",
+    "man",
+    "person",
+    "woman",
+}
+
+
+def _regularized_gamma_q(shape: float, value: float) -> float:
+    """Return the regularized upper incomplete gamma function Q(a, x)."""
+    if value <= 0:
+        return 1.0
+    if value < shape + 1.0:
+        term = 1.0 / shape
+        series = term
+        for index in range(1, 1000):
+            term *= value / (shape + index)
+            series += term
+            if abs(term) <= abs(series) * 3e-14:
+                break
+        return max(
+            0.0,
+            min(1.0, 1.0 - series * math.exp(-value + shape * math.log(value)
+                                                - math.lgamma(shape))),
+        )
+
+    tiny = 1e-300
+    numerator = 1.0
+    denominator = value + 1.0 - shape
+    if abs(denominator) < tiny:
+        denominator = tiny
+    fraction = numerator / denominator
+    for index in range(1, 1000):
+        an = -index * (index - shape)
+        if abs(denominator) < tiny:
+            denominator = tiny
+        if abs(numerator) < tiny:
+            numerator = tiny
+        denominator = an / denominator + value + 1.0 - shape
+        if abs(denominator) < tiny:
+            denominator = tiny
+        numerator = (value + index - shape) + an / numerator
+        if abs(numerator) < tiny:
+            numerator = tiny
+        denominator = 1.0 / denominator
+        delta = numerator * denominator
+        fraction *= delta
+        if abs(delta - 1.0) <= 3e-14:
+            break
+    return max(
+        0.0,
+        min(1.0, math.exp(-value + shape * math.log(value)
+                          - math.lgamma(shape)) * fraction),
+    )
+
+
+def _association_statistics(
+    counts: dict[str, dict[str, int]],
+    rows: list[str],
+    columns: list[str],
+) -> dict[str, float | int]:
+    """Calculate Cramér's V and Pearson chi-square uncertainty statistics."""
+    total = sum(counts[row][column] for row in rows for column in columns)
+    degrees_of_freedom = max(0, (len(rows) - 1) * (len(columns) - 1))
+    if total == 0 or degrees_of_freedom == 0:
+        return {
+            "chi_square": 0.0,
+            "degrees_of_freedom": degrees_of_freedom,
+            "p_value": 1.0,
+            "cramers_v": 0.0,
+        }
+
+    row_totals = {row: sum(counts[row].values()) for row in rows}
+    column_totals = {
+        column: sum(counts[row][column] for row in rows)
+        for column in columns
+    }
+    chi_square = 0.0
+    for row in rows:
+        for column in columns:
+            expected = row_totals[row] * column_totals[column] / total
+            if expected:
+                observed = counts[row][column]
+                chi_square += (observed - expected) ** 2 / expected
+    p_value = _regularized_gamma_q(degrees_of_freedom / 2, chi_square / 2)
+    cramers_v = math.sqrt(
+        chi_square / (total * min(len(rows) - 1, len(columns) - 1))
+    )
+    return {
+        "chi_square": round(chi_square, 6),
+        "degrees_of_freedom": degrees_of_freedom,
+        "p_value": round(p_value, 6),
+        "cramers_v": round(cramers_v, 6),
+    }
 
 
 def _heatmap_data_uri(
@@ -215,8 +312,94 @@ def _association_matrix(
         "counts": matrix_counts,
         "percentages": matrix_percentages,
         "sample_counts": sample_counts,
+        "statistics": _association_statistics(
+            matrix_counts, rows, columns
+        ),
         "total": sum(sample_counts.values()),
     }
+
+
+def _stereotypical_associations(data: list[dict[str, Any]]) -> dict[str, Any]:
+    """Summarize detected object prevalence conditional on jobs and workplaces."""
+    groups: dict[str, Counter[str]] = {
+        attribute: Counter() for attribute in OBJECT_ASSOCIATION_ATTRIBUTES
+    }
+    group_objects: dict[str, defaultdict[str, Counter[str]]] = {
+        attribute: defaultdict(Counter)
+        for attribute in OBJECT_ASSOCIATION_ATTRIBUTES
+    }
+    object_totals: dict[str, Counter[str]] = {
+        attribute: Counter() for attribute in OBJECT_ASSOCIATION_ATTRIBUTES
+    }
+    analyzable_totals: Counter[str] = Counter()
+
+    for record in data:
+        prompt_features = record.get("prompt_feats", {})
+        if not isinstance(prompt_features, dict):
+            continue
+        florence = record.get("items_florence", {})
+        labels = florence.get("labels") if isinstance(florence, dict) else None
+        objects = {
+            str(label).strip().lower()
+            for label in labels
+            if isinstance(labels, (list, tuple))
+            and isinstance(label, str)
+            and str(label).strip()
+            and str(label).strip().lower() not in NON_OBJECT_LABELS
+        }
+        for attribute in OBJECT_ASSOCIATION_ATTRIBUTES:
+            group = prompt_features.get(attribute)
+            if group is None:
+                continue
+            group_label = str(group).strip().lower()
+            if not group_label:
+                continue
+            analyzable_totals[attribute] += 1
+            groups[attribute][group_label] += 1
+            for object_label in objects:
+                object_totals[attribute][object_label] += 1
+            for object_label in objects:
+                group_objects[attribute][group_label][object_label] += 1
+
+    result: dict[str, Any] = {}
+    for attribute in OBJECT_ASSOCIATION_ATTRIBUTES:
+        overall_total = analyzable_totals[attribute]
+        if not overall_total:
+            continue
+        overall_prevalence = {
+            label: count / overall_total
+            for label, count in object_totals[attribute].items()
+        }
+        rows = []
+        for group, group_total in sorted(groups[attribute].items()):
+            candidates = []
+            for object_label, count in group_objects[attribute][group].items():
+                conditional_probability = count / group_total
+                baseline = overall_prevalence.get(object_label, 0.0)
+                candidates.append({
+                    "object": object_label,
+                    "count": count,
+                    "probability": round(conditional_probability, 6),
+                    "lift": round(
+                        conditional_probability / baseline, 6
+                    ) if baseline else None,
+                })
+            candidates.sort(
+                key=lambda item: (item["lift"] is not None, item["lift"] or 0,
+                                  item["count"], item["object"]),
+                reverse=True,
+            )
+            rows.append({
+                "group": group,
+                "observations": group_total,
+                "top_objects": candidates[:5],
+            })
+        result[attribute] = {
+            "attribute": attribute,
+            "baseline_observations": overall_total,
+            "rows": rows,
+        }
+    return result
 
 
 def collect_bias_stats(
@@ -268,4 +451,5 @@ def collect_bias_stats(
         "output_features": available_features,
         "associations": associations,
         "double_associations": double_associations,
+        "stereotypical_associations": _stereotypical_associations(records),
     }

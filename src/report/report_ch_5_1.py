@@ -11,7 +11,7 @@ def render_chapter_five(bias_stats: dict[str, Any]) -> str:
     serialized = json.dumps(bias_stats, ensure_ascii=True).replace("</", "<\\/")
     return f"""
   <div class="eyebrow">Chapter 5</div>
-  <h2 id="chapter-5">Conditional distributions</h2>
+  <h2 id="chapter-5">Conditional distributions and Association analysis</h2>
   <p class="subtitle">Whether prompt attributes systematically co-occur with
   detected properties of generated images.</p>
   <section id="chapter-5-single-variable" aria-labelledby="chapter-5-single-heading">
@@ -19,7 +19,9 @@ def render_chapter_five(bias_stats: dict[str, Any]) -> str:
     <p>Each plot shows the detected output distribution conditional on one
     prompt category. Percentages are normalized within each prompt category.
     Images missing either the prompt category or detected feature are excluded
-    from that plot.</p>
+    from that plot. Cramér's V summarizes association strength from the
+    contingency table, while the Pearson chi-square p-value indicates the
+    uncertainty of the association test.</p>
     <div id="chapter-5-controls" class="checkbox-grid" aria-label="Association plot selectors"></div>
     <div id="chapter-5-associations" class=""></div>
   </section>
@@ -62,10 +64,17 @@ def render_chapter_five(bias_stats: dict[str, Any]) -> str:
         const matrix = chapterFiveData.associations?.[promptAttribute]?.[outputFeature];
         if (!matrix || !matrix.total) return;
         const plotId = `chapter-five-${{promptAttribute}}-${{outputFeature}}`;
+        const statistics = matrix.statistics || {{}};
         cards.push(`<article class="plot-card"><h4>Prompt ${{chapterFiveSafe(
           chapterFiveTitle(promptAttribute))}} vs detected ${{chapterFiveSafe(
           chapterFiveTitle(outputFeature))}}</h4><p class="note">${{matrix.total}}
-          paired observations</p><div id="${{plotId}}" style="height:360px"></div></article>`);
+          paired observations</p><p class="note">Cramér's V:
+          ${{Number(statistics.cramers_v || 0).toFixed(3)}} (association strength)
+          · Chi-square:
+          ${{Number(statistics.chi_square || 0).toFixed(3)}} (df=${{statistics.degrees_of_freedom || 0}})
+          · p-value:
+          ${{Number(statistics.p_value ?? 1).toFixed(3)}} (uncertainty)</p>
+          <div id="${{plotId}}" style="height:360px"></div></article>`);
         plots.push([plotId, matrix, promptAttribute, outputFeature, chartType]);
       }}));
       document.getElementById("chapter-5-associations").innerHTML = cards.join("") ||
@@ -117,7 +126,7 @@ def render_chapter_five(bias_stats: dict[str, Any]) -> str:
         chapterFiveControl("prompt-attribute", value, index < 3)).join("") +
       '</fieldset><fieldset><legend>Detected features</legend>' +
       chapterFiveOutputFeatures.map((value, index) =>
-        chapterFiveControl("output-feature", value, index < 3)).join("") +
+        chapterFiveControl("output-feature", value, index == 3)).join("") +
       '</fieldset><fieldset><legend>Chart type</legend>' +
       '<label><input type="radio" name="chart-type" value="bar" checked> Bar</label>' +
       '<label><input type="radio" name="chart-type" value="pie"> Pie</label></fieldset>';
