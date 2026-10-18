@@ -385,8 +385,10 @@ def _stereotypical_associations(data: list[dict[str, Any]]) -> dict[str, Any]:
                     ) if baseline else None,
                 })
             candidates.sort(
-                key=lambda item: (item["lift"] is not None, item["lift"] or 0,
-                                  item["count"], item["object"]),
+                key=lambda item: (
+                    item["probability"], item["count"],
+                    item["lift"] is not None, item["lift"] or 0, item["object"]
+                ),
                 reverse=True,
             )
             rows.append({
@@ -399,6 +401,224 @@ def _stereotypical_associations(data: list[dict[str, Any]]) -> dict[str, Any]:
             "baseline_observations": overall_total,
             "rows": rows,
         }
+    return result
+
+
+def _solve_linear_system(
+    matrix: list[list[float]], vector: list[float]
+) -> list[float] | None:
+    """Solve a small normal-equation system with Gaussian elimination."""
+    augmented = [row[:] + [value] for row, value in zip(matrix, vector)]
+    size = len(vector)
+    for pivot in range(size):
+        index = max(range(pivot, size), key=lambda row: abs(augmented[row][pivot]))
+        if abs(augmented[index][pivot]) < 1e-10:
+            return None
+        augmented[pivot], augmented[index] = augmented[index], augmented[pivot]
+        divisor = augmented[pivot][pivot]
+        augmented[pivot] = [value / divisor for value in augmented[pivot]]
+        for row in range(size):
+            if row == pivot:
+                continue
+            factor = augmented[row][pivot]
+            augmented[row] = [
+                value - factor * pivot_value
+                for value, pivot_value in zip(augmented[row], augmented[pivot])
+            ]
+    return [augmented[index][-1] for index in range(size)]
+
+
+def _interaction_model(
+    observations: list[tuple[str, str, int]],
+    first_attribute: str,
+    second_attribute: str,
+    output_category: str,
+) -> dict[str, Any] | None:
+    """Fit a categorical main-effects plus interaction model when estimable."""
+    if len(observations) < 20:
+        return None
+    first_values = sorted({first for first, _, _ in observations})
+    second_values = sorted({second for _, second, _ in observations})
+    if len(first_values) < 2 or len(second_values) < 2:
+        return None
+    first_reference, second_reference = first_values[0], second_values[0]
+    columns = [("intercept",)]
+    columns.extend(("first", value) for value in first_values[1:])
+    columns.extend(("second", value) for value in second_values[1:])
+    columns.extend(
+        ("interaction", first, second)
+        for first in first_values[1:]
+        for second in second_values[1:]
+    )
+
+    def design(first: str, second: str, include_interactions: bool) -> list[float]:
+        values = [1.0]
+        values.extend(float(first == value) for value in first_values[1:])
+        values.extend(float(second == value) for value in second_values[1:])
+        if include_interactions:
+            values.extend(
+                float(first == value and second == other)
+                for value in first_values[1:]
+                for other in second_values[1:]
+            )
+        return values
+
+    def fit(include_interactions: bool) -> tuple[list[float], float, int] | None:
+        rows = [design(first, second, include_interactions)
+                for first, second, _ in observations]
+        targets = [float(value) for _, _, value in observations]
+        width = len(rows[0])
+        normal = [[sum(row[i] * row[j] for row in rows) for j in range(width)]
+                  for i in range(width)]
+        right = [sum(row[i] * target for row, target in zip(rows, targets))
+                 for i in range(width)]
+        coefficients = _solve_linear_system(normal, right)
+        if coefficients is None:
+            return None
+        residual = sum(
+            (target - sum(value * coefficient for value, coefficient in zip(row, coefficients))) ** 2
+            for row, target in zip(rows, targets)
+        )
+        return coefficients, residual, len(targets) - width
+
+    reduced = fit(False)
+    full = fit(True)
+    if reduced is None or full is None or full[2] <= 0:
+        return None
+    interaction_df = (len(first_values) - 1) * (len(second_values) - 1)
+    if reduced[1] <= 1e-12 and full[1] <= 1e-12:
+        return None
+    full_error = max(full[1], 1e-12)
+    reduced_error = max(reduced[1], full_error)
+    statistic = max(0.0, len(observations) * math.log(reduced_error / full_error))
+    return {
+        "output_category": output_category,
+        "n": len(observations),
+        "first_levels": first_values,
+        "second_levels": second_values,
+        "interaction_df": interaction_df,
+        "interaction_statistic": round(statistic, 6),
+        "interaction_p_value": round(
+            _regularized_gamma_q(interaction_df / 2, statistic / 2), 6
+        ),
+        "interaction_terms": [
+            {
+                "first": first,
+                "second": second,
+                "estimate": round(full[0][index], 6),
+            }
+            for index, column in enumerate(columns)
+            if len(column) == 3 and column[0] == "interaction"
+            for _, first, second in [column]
+        ],
+    }
+
+
+def _intersectional_analysis(data: list[dict[str, Any]]) -> dict[str, Any]:
+    """Compare joint prompt groups with their constituent group expectations."""
+    result: dict[str, Any] = {}
+    for first_attribute, second_attribute in combinations(PROMPT_ATTRIBUTES, 2):
+        key = f"{first_attribute}__{second_attribute}"
+        outputs: dict[str, Any] = {}
+        for output_feature in OUTPUT_FEATURES:
+            cells: defaultdict[tuple[str, str], Counter[str]] = defaultdict(Counter)
+            first_counts: defaultdict[str, Counter[str]] = defaultdict(Counter)
+            second_counts: defaultdict[str, Counter[str]] = defaultdict(Counter)
+            for record in data:
+                prompt = record.get("prompt_feats", {})
+                if not isinstance(prompt, dict):
+                    continue
+                first = prompt.get(first_attribute)
+                second = prompt.get(second_attribute)
+                detected = _detected_value(record, output_feature)
+                if first is None or second is None or detected is None:
+                    continue
+                first_label = str(first).strip().lower()
+                second_label = str(second).strip().lower()
+                detected_label = str(detected).strip().lower()
+                if not first_label or not second_label or not detected_label:
+                    continue
+                cells[(first_label, second_label)][detected_label] += 1
+                first_counts[first_label][detected_label] += 1
+                second_counts[second_label][detected_label] += 1
+            categories = sorted({
+                category for counts in cells.values() for category in counts
+            })
+            if not cells or not categories:
+                continue
+            rows = []
+            forest = []
+            for (first, second), counts in sorted(cells.items()):
+                sample_size = sum(counts.values())
+                first_total = sum(first_counts[first].values())
+                second_total = sum(second_counts[second].values())
+                percentages = {}
+                for category in categories:
+                    joint = counts.get(category, 0) / sample_size
+                    first_probability = first_counts[first].get(category, 0) / first_total
+                    second_probability = second_counts[second].get(category, 0) / second_total
+                    expected = (first_probability + second_probability) / 2
+                    difference = joint - expected
+                    standard_error = math.sqrt(max(
+                        1e-12,
+                        joint * (1 - joint) / sample_size
+                        + first_probability * (1 - first_probability) / (4 * first_total)
+                        + second_probability * (1 - second_probability) / (4 * second_total),
+                    ))
+                    percentages[category] = {
+                        "percentage": round(100 * joint, 4),
+                        "count": counts.get(category, 0),
+                    }
+                    forest.append({
+                        "group": f"{first} × {second}",
+                        "category": category,
+                        "difference": round(100 * difference, 4),
+                        "lower": round(100 * (difference - 1.96 * standard_error), 4),
+                        "upper": round(100 * (difference + 1.96 * standard_error), 4),
+                        "n": sample_size,
+                    })
+                rows.append({
+                    "group": f"{first} × {second}",
+                    "first": first,
+                    "second": second,
+                    "n": sample_size,
+                    "values": percentages,
+                })
+            models = []
+            for category in categories:
+                category_observations = []
+                for record in data:
+                    prompt = record.get("prompt_feats", {})
+                    detected = _detected_value(record, output_feature)
+                    if not isinstance(prompt, dict) or detected is None:
+                        continue
+                    first = prompt.get(first_attribute)
+                    second = prompt.get(second_attribute)
+                    if first is None or second is None:
+                        continue
+                    category_observations.append((
+                        str(first).strip().lower(), str(second).strip().lower(),
+                        int(str(detected).strip().lower() == category),
+                    ))
+                model = _interaction_model(
+                    category_observations, first_attribute, second_attribute, category
+                )
+                if model is not None:
+                    models.append(model)
+            outputs[output_feature] = {
+                "output_feature": output_feature,
+                "categories": categories,
+                "rows": rows,
+                "forest": forest,
+                "models": models,
+                "total": sum(row["n"] for row in rows),
+            }
+        if outputs:
+            result[key] = {
+                "first_attribute": first_attribute,
+                "second_attribute": second_attribute,
+                "outputs": outputs,
+            }
     return result
 
 
@@ -451,5 +671,6 @@ def collect_bias_stats(
         "output_features": available_features,
         "associations": associations,
         "double_associations": double_associations,
+        "intersectional": _intersectional_analysis(records),
         "stereotypical_associations": _stereotypical_associations(records),
     }

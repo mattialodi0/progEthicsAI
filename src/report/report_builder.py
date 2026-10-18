@@ -12,7 +12,8 @@ from .report_ch_2 import render_chapter_two
 from .report_ch_3 import render_chapter_three
 from .report_ch_4 import render_chapter_four
 from .report_ch_5_1 import render_chapter_five
-from .report_ch_5_2 import render_stereotypical_associations
+from .report_ch_5_3 import render_stereotypical_associations
+from .report_ch_5_4 import render_intersectional_analysis
 
 
 def build_report(
@@ -59,6 +60,7 @@ def build_report(
     chapter_five = (
         render_chapter_five(bias_stats)
         + render_stereotypical_associations(bias_stats)
+        + render_intersectional_analysis(bias_stats)
     )
     report_data = {
         "chapter_1": chapter_one.data,
@@ -69,7 +71,7 @@ def build_report(
     }
     serialized_data = json.dumps(report_data, ensure_ascii=True).replace("</", "<\\/")
 
-    output_dir = Path(config.get("report_dir", "report"))
+    output_dir = Path(config.get("report_dir", "assets/report"))
     output_dir.mkdir(parents=True, exist_ok=True)
     report_path = output_dir / config.get("report_filename", "fairness_report.html")
     if report_path.suffix.lower() != ".html":
@@ -180,6 +182,7 @@ def build_report(
       <a class="subitem" href="#chapter-5-single-variable" data-section-link="chapter-5-single-variable">Single-variable associations</a>
       <a class="subitem" href="#chapter-5-double-variable" data-section-link="chapter-5-double-variable">Double-variable associations</a>
       <a class="subitem" href="#chapter-5-stereotypical" data-section-link="chapter-5-stereotypical">Stereotypical item associations</a>
+      <a class="subitem" href="#chapter-5-intersectional" data-section-link="chapter-5-intersectional">Intersectional analysis</a>
     </nav>
   </aside>
   <main>

@@ -47,7 +47,7 @@ def render_stereotypical_associations(bias_stats: dict[str, Any]) -> str:
         return;
       }}
       target.innerHTML = `<p class="note">${{data.baseline_observations}}
-        images with a detected object and prompted ${{chapterFiveThreeTitle(attribute)}}.</p>
+        observations with a prompted ${{chapterFiveThreeTitle(attribute)}}.</p>
         <table><thead><tr><th>${{chapterFiveThreeTitle(attribute)}}</th>
         <th>Observations</th><th>Most common objects</th></tr></thead><tbody>` +
         data.rows.map((row) => `<tr><td>${{chapterFiveThreeSafe(row.group)}}</td>
