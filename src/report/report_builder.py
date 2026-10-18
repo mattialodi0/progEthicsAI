@@ -14,6 +14,7 @@ from .report_ch_4 import render_chapter_four
 from .report_ch_5_1 import render_chapter_five
 from .report_ch_5_3 import render_stereotypical_associations
 from .report_ch_5_4 import render_intersectional_analysis
+from .report_ch_7 import render_chapter_seven
 
 
 def build_report(
@@ -62,12 +63,14 @@ def build_report(
         + render_stereotypical_associations(bias_stats)
         + render_intersectional_analysis(bias_stats)
     )
+    chapter_seven = render_chapter_seven(report_data["chapter_7"])
     report_data = {
         "chapter_1": chapter_one.data,
         "chapter_2": coverage,
         "chapter_3": chapter_three_data,
         "chapter_4": report_data["chapter_4"],
         "chapter_5": bias_stats,
+        "chapter_7": report_data["chapter_7"],
     }
     serialized_data = json.dumps(report_data, ensure_ascii=True).replace("</", "<\\/")
 
@@ -183,6 +186,9 @@ def build_report(
       <a class="subitem" href="#chapter-5-double-variable" data-section-link="chapter-5-double-variable">Double-variable associations</a>
       <a class="subitem" href="#chapter-5-stereotypical" data-section-link="chapter-5-stereotypical">Stereotypical item associations</a>
       <a class="subitem" href="#chapter-5-intersectional" data-section-link="chapter-5-intersectional">Intersectional analysis</a>
+      <a class="supitem" href="#chapter-7" data-section-link="chapter-7">7. Visual feature and embedding analysis</a>
+      <a class="subitem" href="#chapter-7-features" data-section-link="chapter-7-features">Image-feature distributions</a>
+      <a class="subitem" href="#chapter-7-embeddings" data-section-link="chapter-7-embeddings">Embedding separability</a>
     </nav>
   </aside>
   <main>
@@ -193,6 +199,7 @@ def build_report(
     {chapter_three}
     {chapter_four}
     {chapter_five}
+    {chapter_seven}
   </main>
 </div>
 <script>
