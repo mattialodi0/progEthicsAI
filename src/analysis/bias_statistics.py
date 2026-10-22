@@ -338,12 +338,13 @@ def _stereotypical_associations(data: list[dict[str, Any]]) -> dict[str, Any]:
         if not isinstance(prompt_features, dict):
             continue
         florence = record.get("items_florence", {})
-        labels = florence.get("labels") if isinstance(florence, dict) else None
+        labels = florence.get("labels", ()) if isinstance(florence, dict) else ()
+        if not isinstance(labels, (list, tuple)):
+            labels = ()
         objects = {
             str(label).strip().lower()
             for label in labels
-            if isinstance(labels, (list, tuple))
-            and isinstance(label, str)
+            if isinstance(label, str)
             and str(label).strip()
             and str(label).strip().lower() not in NON_OBJECT_LABELS
         }

@@ -13,6 +13,7 @@ IMAGE_FEATURES = (
     "brightness", "saturation", "contrast", "n_people",
     "person_area_ratio", "face_area_ratio",
 )
+MAX_DISTANCE_POINTS = 600
 
 
 def _number(value: Any) -> float | None:
@@ -76,7 +77,7 @@ def _umap(vectors: list[list[float]]) -> list[list[float]] | None:
 
 
 def _distance_distributions(
-    vectors: list[list[float]], labels: list[str | None], max_points: int = 600
+    vectors: list[list[float]], labels: list[str | None], max_points: int = MAX_DISTANCE_POINTS
 ) -> dict[str, Any]:
     if len(vectors) > max_points:
         indices = [int(index * len(vectors) / max_points) for index in range(max_points)]
@@ -91,20 +92,30 @@ def _distance_distributions(
 
 
 def _silhouette(vectors: list[list[float]], labels: list[str | None]) -> float | None:
+    """Return a deterministic, bounded-cost silhouette estimate."""
+    if len(vectors) > MAX_DISTANCE_POINTS:
+        indices = [int(index * len(vectors) / MAX_DISTANCE_POINTS)
+                   for index in range(MAX_DISTANCE_POINTS)]
+        vectors = [vectors[index] for index in indices]
+        labels = [labels[index] for index in indices]
     groups = sorted({label for label in labels if label is not None})
     if len(groups) < 2:
         return None
+    group_indices = {
+        group: [index for index, item_label in enumerate(labels) if item_label == group]
+        for group in groups
+    }
     scores: list[float] = []
     for index, label in enumerate(labels):
         if label is None:
             continue
         own = [
             _distance(vectors[index], vectors[j])
-            for j, other in enumerate(labels) if other == label and j != index
+            for j in group_indices[label] if j != index
         ]
         means = [
-            sum(_distance(vectors[index], vectors[j]) for j, other in enumerate(labels) if other == group)
-            / labels.count(group)
+            sum(_distance(vectors[index], vectors[j]) for j in group_indices[group])
+            / len(group_indices[group])
             for group in groups if group != label
         ]
         if means:
@@ -118,52 +129,58 @@ def build_visual_feature_analysis(
     data: list[dict[str, Any]], config: dict[str, Any]
 ) -> dict[str, Any]:
     """Build JSON-safe data for all chapter-7 plots."""
-    attributes = sorted({
-        key for record in data
-        for key in (record.get("prompt_feats", {}) if isinstance(record.get("prompt_feats"), dict) else {})
-        if any(
-            isinstance(item.get("prompt_feats"), dict)
-            and item["prompt_feats"].get(key) is not None for item in data
-        )
-    })
+    prompt_feature_values: dict[str, set[str]] = {}
+    modes: set[str] = set()
+    for record in data:
+        modes.add(_record_mode(record, config))
+        prompt_feats = record.get("prompt_feats")
+        if not isinstance(prompt_feats, dict):
+            continue
+        for key, value in prompt_feats.items():
+            if value is not None and str(value).strip():
+                prompt_feature_values.setdefault(key, set()).add(str(value).strip().lower())
+    attributes = sorted(prompt_feature_values)
     groupings = ["prompt_mode", *attributes]
+    groups_by_grouping = {
+        "prompt_mode": sorted(modes),
+        **{attribute: sorted(values) for attribute, values in prompt_feature_values.items()},
+    }
+    record_groups = [
+        {
+            grouping: _group_value(record, grouping, config)
+            for grouping in groupings
+        }
+        for record in data
+    ]
+    feature_values = {
+        feature: [_feature_value(record, feature) for record in data]
+        for feature in IMAGE_FEATURES
+    }
     features: dict[str, Any] = {}
     for feature in IMAGE_FEATURES:
         features[feature] = {
-            "values": [
-                value for record in data
-                if (value := _feature_value(record, feature)) is not None
-            ],
+            "values": [value for value in feature_values[feature] if value is not None],
             "by_group": {
                 grouping: {
                     group: [
-                        value for record in data
-                        if _group_value(record, grouping, config) == group
-                        and (value := _feature_value(record, feature)) is not None
-                    ]
-                    for group in sorted(
-                        set(
-                            _group_value(record, grouping, config)
-                            for record in data
-                            if _group_value(record, grouping, config) is not None
+                        value for value, record_group in zip(
+                            feature_values[feature], record_groups
                         )
-                    )
+                        if record_group[grouping] == group and value is not None
+                    ]
+                    for group in groups_by_grouping[grouping]
                 }
                 for grouping in groupings
             },
         }
 
-    correlation_values = {
-        feature: [_feature_value(record, feature) for record in data]
-        for feature in IMAGE_FEATURES
-    }
     correlation_matrix = []
     for first in IMAGE_FEATURES:
         row = []
         for second in IMAGE_FEATURES:
             pairs = [
                 (left, right) for left, right in zip(
-                    correlation_values[first], correlation_values[second]
+                    feature_values[first], feature_values[second]
                 ) if left is not None and right is not None
             ]
             if len(pairs) < 2:

@@ -156,8 +156,6 @@ def _attribute_analysis(
             distance = _cosine_distance(first_embedding, second_embedding)
             if distance is not None:
                 embedding_distances.append(distance)
-        first_embedding, second_embedding = _embedding(first), _embedding(second)
-        if first_embedding is not None and second_embedding is not None:
             between_distances.append(_distance(first_embedding, second_embedding))
         if first_embedding is not None:
             embeddings_by_condition[first_condition][first["_counterfactual_index"]] = first_embedding

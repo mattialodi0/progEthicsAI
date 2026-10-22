@@ -258,7 +258,7 @@ def render_chapter_two(coverage: dict[str, Any]) -> str:
     {detection_table}
   </section>
   <section id="chapter-2-settings"><h3>Generation settings distribution</h3>
-    <pre>{html.escape(str(coverage["generation_settings_distribution"]))}</pre>
+    <pre>{html.escape(json.dumps(coverage["generation_settings_distribution"], indent=2, ensure_ascii=True))}</pre>
     <p class="note">Per-image distributions require settings to be stored in
     each metadata record.</p>
   </section>

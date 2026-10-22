@@ -4,20 +4,18 @@ import re
 from typing import Any
 
 
-def _contains(prompt: str, value: str) -> bool:
-    """Match a vocabulary value without matching it inside another word."""
-    pattern = r"(?<!\w)" + re.escape(value).replace(r"\ ", r"\s+") + r"(?!\w)"
-    return re.search(pattern, prompt, flags=re.IGNORECASE) is not None
+def _pattern(value: str) -> re.Pattern[str]:
+    """Compile a whole-word prompt-value matcher."""
+    return re.compile(
+        r"(?<!\w)" + re.escape(value).replace(r"\ ", r"\s+") + r"(?!\w)",
+        re.IGNORECASE,
+    )
 
 def _prompt(record: dict[str, Any]) -> str | None:
     value = record.get("prompt")
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None
-
-def _mode(prompt: str | None, mode: str) -> str:
-    if prompt is None:
-        return "unknown"
 
 def collect_prompt_stats(
     data: list[dict[str, Any]],
@@ -39,7 +37,20 @@ def collect_prompt_stats(
     known_prompts = [prompt for prompt in prompts if prompt is not None]
     unique_prompts = set(known_prompts)
     
-    vocabularies = config.get('prompt_variables', {})
+    configured_vocabularies = config.get("prompt_variables", {})
+    vocabularies = (
+        {
+            str(variable): tuple(value for value in values if isinstance(value, str) and value)
+            for variable, values in configured_vocabularies.items()
+            if isinstance(values, (list, tuple))
+        }
+        if isinstance(configured_vocabularies, dict)
+        else {}
+    )
+    patterns = {
+        variable: tuple((value, _pattern(value)) for value in values)
+        for variable, values in vocabularies.items()
+    }
     variable_images: Counter[str] = Counter()
     variable_prompts: defaultdict[str, set[str]] = defaultdict(set)
     value_images: defaultdict[str, Counter[str]] = defaultdict(Counter)
@@ -50,8 +61,8 @@ def collect_prompt_stats(
     for prompt in prompts:
         if prompt is None:
             continue
-        for variable, values in vocabularies.items():
-            matches = {value for value in values if _contains(prompt, value)}
+        for variable, values in patterns.items():
+            matches = {value for value, pattern in values if pattern.search(prompt)}
             if not matches:
                 continue
             variable_images[variable] += 1

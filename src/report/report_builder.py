@@ -53,6 +53,16 @@ def build_report(
     if not isinstance(report_data, dict):
         raise ValueError("Analysis artifact report_data must be a dictionary")
 
+    required_chapters = ("chapter_1", "chapter_2", "chapter_3", "chapter_4", "chapter_5", "chapter_7")
+    missing_chapters = [chapter for chapter in required_chapters if chapter not in report_data]
+    if missing_chapters:
+        raise ValueError(
+            "Analysis artifact is missing required report data: "
+            + ", ".join(missing_chapters)
+        )
+    if not all(isinstance(report_data[chapter], dict) for chapter in required_chapters):
+        raise ValueError("Each required report-data chapter must be a dictionary")
+
     chapter_one = render_chapter_one(report_data["chapter_1"])
     coverage = report_data["chapter_2"]
     chapter_two = render_chapter_two(coverage)
@@ -82,7 +92,10 @@ def build_report(
 
     output_dir = Path(config.get("report_dir", "assets/report"))
     output_dir.mkdir(parents=True, exist_ok=True)
-    report_path = output_dir / config.get("report_filename", "fairness_report.html")
+    filename = config.get("report_filename", "fairness_report.html")
+    if not isinstance(filename, str) or Path(filename).name != filename:
+        raise ValueError("report_filename must be a filename, not a path")
+    report_path = output_dir / filename
     if report_path.suffix.lower() != ".html":
         raise ValueError("report_filename must use the .html extension")
 

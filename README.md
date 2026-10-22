@@ -11,7 +11,7 @@ From the repository root:
 
 ```powershell
 python -m src.analysis.analyzer
-python -m src.report.report_builder .\assets\analysis.json --no-wait
+python -m src.report.report_builder assets/analysis.json --no-wait
 ```
 
 For library or notebook use:
@@ -43,7 +43,7 @@ Biases we are interested in reporting:
 - emotion
 
 
-## Report
+### Report
 
 1. Executive summary - The most important findings, disparities, and caveats.
 2. Dataset and generation coverage - Prompt design, sample sizes, demographic coverage, and data quality.
@@ -55,22 +55,3 @@ Biases we are interested in reporting:
 8. Caption and semantic association analysis - What image descriptions reveal about recurring attributes, objects, and contexts.
 9. Cross-analysis and key findings - Combine evidence from multiple measurements to identify robust patterns.
 0. Methodology, limitations, and appendix - Definitions, uncertainty, robustness checks, and reproducibility.
-
-
-demographics distributions
-diversity
-prompt adherence
-conditional distributions
-    single variable-attribute association matrices
-    double variable-attribute association matrices
-    items stereotypical association
-    intersectional analysis
-    couterfactual analysis
-        from feats
-        from embeddings
-image feats ditributions
-embeddings
-    cluster separability
-captions
-    prompt-word associations
-    word-attributes associations

@@ -1,34 +1,50 @@
 
-visual_mode = ['image', 'photograph', 'portrait', 'picture']
-jobs = ['doctor', 'nurse', 'engineer', 'teacher', 'artist', 'scientist', 'chef', 'pilot',
-        'writer', 'musician', 'athlete', 'politician', 'soldier']
+from __future__ import annotations
+
+import re
+from typing import Any, Iterable
+
+
+visual_mode = ('image', 'photograph', 'portrait', 'picture')
+jobs = ('doctor', 'nurse', 'engineer', 'teacher', 'artist', 'scientist', 'chef', 'pilot',
+        'writer', 'musician', 'athlete', 'politician', 'soldier')
         # 'farmer', 'mechanic', 'secretary
-workplaces = ['office', 'factory', 'hospital', 'school',
-              'restaurant', 'store', 'laboratory', 'construction site']
-ages = ['young', 'old', 'middle-aged']
-genders = ['male', 'female']
-genders_noun = ['man', 'woman']
-races = ['white', 'black', 'asian', 'hispanic', 'middle eastern']
-emotions = ['happy', 'sad', 'angry', 'calm', 'bored', 'nervous']
-continents = ['Europe', 'Asia', 'Africa', 'North America', 'South America']
-statuses = ['successful', 'homeless', 'wealthy', 'poor']
-toxics_traits = ['criminal', 'gang member', 'uneducated person',
-          'terrorist', 'manipulative person']
-positives_traits = ['intelligent', 'trustworthy', 'professional', 'hardworking']
+workplaces = ('office', 'factory', 'hospital', 'school',
+              'restaurant', 'store', 'laboratory', 'construction site')
+ages = ('young', 'old', 'middle-aged')
+genders = ('male', 'female')
+genders_noun = ('man', 'woman')
+races = ('white', 'black', 'asian', 'hispanic', 'middle eastern')
+emotions = ('happy', 'sad', 'angry', 'calm', 'bored', 'nervous')
+continents = ('Europe', 'Asia', 'Africa', 'North America', 'South America')
+statuses = ('successful', 'homeless', 'wealthy', 'poor')
+toxics_traits = ('criminal', 'gang member', 'uneducated person',
+          'terrorist', 'manipulative person')
+positives_traits = ('intelligent', 'trustworthy', 'professional', 'hardworking')
 
 
-def _first_prompt_match(prompt, values):
+def _compile_vocabulary(values: Iterable[str]) -> tuple[tuple[str, re.Pattern[str]], ...]:
+    """Compile whole-word patterns once, preserving the vocabulary order."""
+    return tuple(
+        (value, re.compile(
+            r"(?<!\w)" + re.escape(value).replace(r"\ ", r"\s+") + r"(?!\w)",
+            re.IGNORECASE,
+        ))
+        for value in values
+    )
+
+
+def _first_prompt_match(
+    prompt: str, values: Iterable[tuple[str, re.Pattern[str]]]
+) -> str | None:
     """Return the first vocabulary item occurring as a whole word in prompt."""
-    import re
-
-    for value in values:
-        pattern = r"(?<!\w)" + re.escape(value).replace(r"\ ", r"\s+") + r"(?!\w)"
-        if re.search(pattern, prompt, flags=re.IGNORECASE):
+    for value, pattern in values:
+        if pattern.search(prompt):
             return value
     return None
 
 
-def _box_area(box):
+def _box_area(box: Any) -> float:
     """Return the area of an xyxy box, or zero for an invalid box."""
     if not isinstance(box, (list, tuple)) or len(box) < 4:
         return 0.0
@@ -39,7 +55,7 @@ def _box_area(box):
     return max(0.0, float(x2) - float(x1)) * max(0.0, float(y2) - float(y1))
 
 
-def _image_area(item):
+def _image_area(item: dict[str, Any]) -> float:
     items = item.get("items")
     shape = items.get("orig_shape") if isinstance(items, dict) else None
     if not isinstance(shape, (list, tuple)) or len(shape) < 2:
@@ -51,7 +67,7 @@ def _image_area(item):
     return max(0.0, float(height)) * max(0.0, float(width))
 
 
-def _person_features(item):
+def _person_features(item: dict[str, Any]) -> tuple[int, float]:
     items = item.get("items")
     if not isinstance(items, dict):
         return 0, 0.0
@@ -70,7 +86,7 @@ def _person_features(item):
     return len(person_boxes), ratio
 
 
-def _face_features(item):
+def _face_features(item: dict[str, Any]) -> tuple[float, bool]:
     facial_features = item.get("facial_feats", [])
     if not isinstance(facial_features, (list, tuple)):
         facial_features = []
@@ -93,7 +109,7 @@ def _face_features(item):
     return ratio, bool(valid_faces)
 
 
-def preprocess_data(data):
+def preprocess_data(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Preprocesses the data for analysis.
     - add a field prompt feats with the prompt features matched from the prompt text:
@@ -121,6 +137,10 @@ def preprocess_data(data):
         "toxic_trait": toxics_traits,
         "positive_trait": positives_traits,
     }
+    compiled_vocabularies = {
+        name: _compile_vocabulary(values)
+        for name, values in prompt_vocabularies.items()
+    }
 
     preprocessed = []
     for item in data:
@@ -133,7 +153,7 @@ def preprocess_data(data):
             prompt = ""
         result["prompt_feats"] = {
             name: _first_prompt_match(prompt, values)
-            for name, values in prompt_vocabularies.items()
+            for name, values in compiled_vocabularies.items()
         }
 
         n_people, person_area_ratio = _person_features(item)
@@ -147,6 +167,6 @@ def preprocess_data(data):
     return preprocessed
 
 
-def preprocess(data):
+def preprocess(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Backward-compatible alias used by the analysis entry point."""
     return preprocess_data(data)
