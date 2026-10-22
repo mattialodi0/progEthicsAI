@@ -13,6 +13,8 @@ from .bias_statistics import collect_bias_stats
 from ..report.report_ch_2 import build_coverage
 from ..report.report_ch_3 import build_demographic_diversity
 from ..report.report_ch_7 import build_visual_feature_analysis
+from .other_statistics import build_caption_analysis
+from .counterfactual_statistics import build_counterfactual_analysis
 
 
 def analyze(data: list[dict[str, Any]], config: dict[str, Any]) -> dict[str, Any]:
@@ -52,7 +54,9 @@ def analyze(data: list[dict[str, Any]], config: dict[str, Any]) -> dict[str, Any
         "chapter_3": build_demographic_diversity(analysis_results, config),
         "chapter_4": general_stats.get("prompt_adherence", {}),
         "chapter_5": bias_stats,
+        "chapter_6": build_counterfactual_analysis(preprocessed_data),
         "chapter_7": build_visual_feature_analysis(preprocessed_data, config),
+        "chapter_8": build_caption_analysis(preprocessed_data, config),
     }
     artifact = {
         "schema_version": 1,

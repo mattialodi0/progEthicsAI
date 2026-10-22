@@ -42,11 +42,6 @@ Biases we are interested in reporting:
 - actractiveness
 - emotion
 
-Other statistics:
-- diversity (both intra-group and coverage)
-- consistency
-- wording influence
-
 
 ## Report
 
