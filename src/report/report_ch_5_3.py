@@ -11,6 +11,7 @@ def render_stereotypical_associations(bias_stats: dict[str, Any]) -> str:
     associations = bias_stats.get("stereotypical_associations", {})
     serialized = json.dumps(associations, ensure_ascii=True).replace("</", "<\\/")
     return f"""
+  <div id="chapter-container">
   <section id="chapter-5-stereotypical" aria-labelledby="chapter-5-stereotypical-heading">
     <h3 id="chapter-5-stereotypical-heading">5.3 Stereotypical item associations</h3>
     <p>These tables show which detected objects most often co-occur with each

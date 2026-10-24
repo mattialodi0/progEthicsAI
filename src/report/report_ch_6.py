@@ -115,6 +115,7 @@ def render_chapter_six(data: dict[str, Any]) -> str:
     """Render metrics and plots from the precomputed chapter-6 artifact."""
     serialized = json.dumps(data, ensure_ascii=True).replace("</", "<\\/")
     return f"""
+    <div id="chapter-container">
   <div class="eyebrow">Chapter 6</div>
   <h2 id="chapter-6">Counterfactual analysis</h2>
   <p class="subtitle">Matched prompts differ only in the investigated attribute.
@@ -140,4 +141,5 @@ def render_chapter_six(data: dict[str, Any]) -> str:
     <article class="plot-card">{_embedding_plots(data)}</article>
   </section>
   <script>window.chapterSixData = {serialized};</script>
+</div>
 """

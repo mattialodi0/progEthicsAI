@@ -239,6 +239,7 @@ def render_chapter_seven(chapter_data: dict[str, Any]) -> str:
     """Render interactive feature and embedding plots."""
     serialized = json.dumps(chapter_data, ensure_ascii=True).replace("</", "<\\/")
     return f"""
+    <div id="chapter-container">
   <div class="eyebrow">Chapter 7</div>
   <h2 id="chapter-7">Visual feature and embedding analysis</h2>
   <p class="subtitle">Measurable image properties and semantic representation are
@@ -337,4 +338,5 @@ def render_chapter_seven(chapter_data: dict[str, Any]) -> str:
     }};
     renderChapterSeven();
   </script>
+  </div>
 """

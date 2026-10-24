@@ -23,7 +23,8 @@ def _race_measurement(measurement: dict[str, Any]) -> dict[str, Any]:
     if not measurement or not measurement.get("counts"):
         return measurement
     counts: dict[str, dict[str, int]] = {}
-    normalize = lambda value: (
+
+    def normalize(value): return (
         "hispanic" if str(value).strip().lower() in {"latino hispanic", "hispanic"}
         else str(value)
     )
@@ -32,13 +33,16 @@ def _race_measurement(measurement: dict[str, Any]) -> dict[str, Any]:
         target = counts.setdefault(normalized_row, {})
         for column, value in columns.items():
             normalized_column = normalize(column)
-            target[normalized_column] = target.get(normalized_column, 0) + int(value)
-    labels = sorted(set(counts) | {column for row in counts.values() for column in row})
+            target[normalized_column] = target.get(
+                normalized_column, 0) + int(value)
+    labels = sorted(
+        set(counts) | {column for row in counts.values() for column in row})
     return {
         **measurement,
         "labels": labels,
         "counts": {
-            row: {column: counts.get(row, {}).get(column, 0) for column in labels}
+            row: {column: counts.get(row, {}).get(column, 0)
+                  for column in labels}
             for row in labels
         },
     }
@@ -51,7 +55,8 @@ def _matrix(title: str, measurement: dict[str, Any]) -> str:
         return ""
     matrix = {
         row: {
-            column: numeric(value) / max(1, sum(numeric(item) for item in counts.get(row, {}).values()))
+            column: numeric(value) / max(1, sum(numeric(item)
+                                                for item in counts.get(row, {}).values()))
             for column, value in counts.get(row, {}).items()
         }
         for row in labels
@@ -61,7 +66,8 @@ def _matrix(title: str, measurement: dict[str, Any]) -> str:
             x=labels,
             y=labels,
             z=[
-                [100 * numeric(matrix.get(row, {}).get(column)) for column in labels]
+                [100 * numeric(matrix.get(row, {}).get(column))
+                 for column in labels]
                 for row in labels
             ],
             text=[
@@ -98,7 +104,8 @@ def render_chapter_four(adherence: dict[str, Any]) -> str:
     attribute_html = "".join(
         _matrix(
             attribute,
-            _race_measurement(measurement) if attribute == "race" else measurement,
+            _race_measurement(
+                measurement) if attribute == "race" else measurement,
         )
         for attribute, measurement in attributes.items()
     ) or '<p class="note">No adherence observations are available.</p>'
@@ -108,7 +115,8 @@ def render_chapter_four(adherence: dict[str, Any]) -> str:
                 name=str(attribute),
                 x=list(modes),
                 y=[
-                    100 * numeric(measurement.get("accuracy", {}).get(attribute))
+                    100 * numeric(measurement.get("accuracy",
+                                  {}).get(attribute))
                     for measurement in modes.values()
                 ],
             )
@@ -119,7 +127,8 @@ def render_chapter_four(adherence: dict[str, Any]) -> str:
         barmode="group",
         yaxis={"range": [0, 100], "title": "Accuracy (%)"},
     )
-    mode_chart = chart(mode_figure, title="Adherence accuracy by prompt mode (%)")
+    mode_chart = chart(
+        mode_figure, title="Adherence accuracy by prompt mode (%)")
     combination_html = "".join(
         _matrix(name, measurement)
         for name, measurement in combinations.items()
@@ -127,11 +136,12 @@ def render_chapter_four(adherence: dict[str, Any]) -> str:
     ) or '<p class="note">No two-attribute prompt combinations are available.</p>'
 
     return f"""
+  <div id="chapter-container">
   <div class="eyebrow">Chapter 4</div>
   <h2 id="chapter-4">Prompt adherence</h2>
-  <p class="subtitle">Whether explicitly requested prompt attributes are present in
-  the detected image features. All measurements below are precomputed by the
-  analysis pipeline.</p>
+  <p class="subtitle">This chapter measures whether the image-generation model follows the attributes explicitly requested in the prompt.</p>
+  <p class="subtitle">Section 4.1 shows the overall adherence by attribute, that is, how many of the attributes requested in the prompt are present in the generated images.
+    We then examine the adherence by prompt mode, expressed as accuracy, and by combinations of two attributes.</p>
   <section id="chapter-4-attributes">
     <h3>4.1 Overall adherence by attribute</h3>
     <div class="">{attribute_html}</div>
@@ -144,4 +154,5 @@ def render_chapter_four(adherence: dict[str, Any]) -> str:
     <h3>4.3 Adherence to combinations of two attributes</h3>
     <div class="">{combination_html}</div>
   </section>
+</div>
 """

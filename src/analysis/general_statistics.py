@@ -230,22 +230,40 @@ def diversity_metrics(
     data: list[dict[str, Any]], config: dict[str, Any]
 ) -> dict[str, Any]:
     """Precompute categorical and semantic diversity for report presentation."""
+    mode_records = _group_records(data, "prompt_mode", config)
+
+    def group_stats(records: list[dict[str, Any]]) -> dict[str, Any]:
+        stats = _embedding_group_stats(records)
+        stats.update({
+            "caption_entropy": _entropy([
+                caption for record in records
+                if isinstance((caption := record.get("caption")), str) and caption.strip()
+            ]),
+            "object_entropy": _entropy([
+                label for record in records for label in _object_labels(record)
+            ]),
+        })
+        return stats
+
     groups: dict[str, dict[str, Any]] = {}
     for group_by in ("prompt_mode", "job", "workplace", "demographic_group"):
         groups[group_by] = {
             group: {
-                **_embedding_group_stats(records),
-                "caption_entropy": _entropy([
-                    caption for record in records
-                    if isinstance((caption := record.get("caption")), str) and caption.strip()
-                ]),
-                "object_entropy": _entropy([
-                    label for record in records for label in _object_labels(record)
-                ]),
+                **group_stats(records),
+                "by_prompt_mode": {
+                    mode: group_stats([
+                        record for record in records
+                        if _record_mode(record, config).lower() == mode
+                    ])
+                    for mode in mode_records
+                    if any(
+                        _record_mode(record, config).lower() == mode
+                        for record in records
+                    )
+                },
             }
             for group, records in _group_records(data, group_by, config).items()
         }
-
     mode_labels = {_record_mode(record, config) for record in data}
     return {
         "groups": groups,

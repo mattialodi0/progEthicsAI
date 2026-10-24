@@ -12,6 +12,7 @@ def render_intersectional_analysis(bias_stats: dict[str, Any]) -> str:
         bias_stats.get("intersectional", {}), ensure_ascii=True
     ).replace("</", "<\\/")
     return f"""
+    
   <section id="chapter-5-intersectional" aria-labelledby="chapter-5-intersectional-heading">
     <h3 id="chapter-5-intersectional-heading">5.4 Intersectional analysis</h3>
     <p>This analysis tests whether a joint prompt group differs from what would

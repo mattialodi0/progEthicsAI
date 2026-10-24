@@ -10,10 +10,12 @@ def render_chapter_five(bias_stats: dict[str, Any]) -> str:
     """Render selectable conditional bar or pie charts."""
     serialized = json.dumps(bias_stats, ensure_ascii=True).replace("</", "<\\/")
     return f"""
+    <div id="chapter-container">
   <div class="eyebrow">Chapter 5</div>
   <h2 id="chapter-5">Conditional distributions and Association analysis</h2>
-  <p class="subtitle">Whether prompt attributes systematically co-occur with
-  detected properties of generated images.</p>
+  <p class="subtitle"> This chapter is the core of the analysis and examines whether prompt attributes 
+  systematically co-occur with detected properties of generated images. 
+  Such information is crucial for understanding the model's behavior and identifying potential biases.</p>
   <section id="chapter-5-single-variable" aria-labelledby="chapter-5-single-heading">
     <h3 id="chapter-5-single-heading">5.1 Single-variable–attribute association matrices</h3>
     <p>Each plot shows the detected output distribution conditional on one
@@ -65,15 +67,11 @@ def render_chapter_five(bias_stats: dict[str, Any]) -> str:
         if (!matrix || !matrix.total) return;
         const plotId = `chapter-five-${{promptAttribute}}-${{outputFeature}}`;
         const statistics = matrix.statistics || {{}};
-        cards.push(`<article class="plot-card"><h4>Prompt ${{chapterFiveSafe(
-          chapterFiveTitle(promptAttribute))}} vs detected ${{chapterFiveSafe(
-          chapterFiveTitle(outputFeature))}}</h4><p class="note">${{matrix.total}}
+        cards.push(`<article class="plot-card"><h4>Prompt ${{chapterFiveSafe(chapterFiveTitle(promptAttribute))}} vs detected ${{chapterFiveSafe(chapterFiveTitle(outputFeature))}}</h4><p class="note">${{matrix.total}}
           paired observations</p><p class="note">Cramér's V:
           ${{Number(statistics.cramers_v || 0).toFixed(3)}} (association strength)
           · Chi-square:
-          ${{Number(statistics.chi_square || 0).toFixed(3)}} (df=${{statistics.degrees_of_freedom || 0}})
-          · p-value:
-          ${{Number(statistics.p_value ?? 1).toFixed(3)}} (uncertainty)</p>
+          ${{Number(statistics.chi_square || 0).toFixed(3)}} (df=${{statistics.degrees_of_freedom || 0}})</p>
           <div id="${{plotId}}" style="height:360px"></div></article>`);
         plots.push([plotId, matrix, promptAttribute, outputFeature, chartType]);
       }}));
@@ -81,7 +79,10 @@ def render_chapter_five(bias_stats: dict[str, Any]) -> str:
         '<p class="note">No paired observations are available for the selected plots.</p>';
       plots.forEach(([plotId, matrix, promptAttribute, outputFeature, chartType]) => {{
         if (chartType === "pie") {{
-          const rowCount = Math.max(matrix.rows.length, 1);
+          const columnCount = Math.min(2, Math.max(matrix.rows.length, 1));
+          const rowCount = Math.ceil(matrix.rows.length / columnCount);
+          const chartHeight = Math.max(340, 230 * rowCount);
+          document.getElementById(plotId).style.height = `${{chartHeight}}px`;
           const traces = matrix.rows.map((row, index) => ({{
             type: "pie",
             labels: matrix.columns,
@@ -90,12 +91,12 @@ def render_chapter_five(bias_stats: dict[str, Any]) -> str:
               `${{matrix.counts[row][column]}} observations`),
             hovertemplate: "Detected: %{{label}}<br>%{{value:.1f}}%<br>%{{text}}<extra></extra>",
             name: row,
-            domain: {{row: index, column: 0}},
+            domain: {{row: Math.floor(index / columnCount), column: index % columnCount}},
             title: {{text: row}}
           }}));
           Plotly.newPlot(plotId, traces, {{
-            grid: {{rows: rowCount, columns: 1, pattern: "independent"}},
-            margin: {{l: 30, r: 30, t: 20, b: 30}}, height: Math.max(340, 230 * rowCount),
+            grid: {{rows: rowCount, columns: columnCount, pattern: "independent"}},
+            margin: {{l: 30, r: 30, t: 20, b: 30}}, height: chartHeight,
             showlegend: true
           }}, {{responsive: true, displaylogo: false}});
         }} else {{
@@ -109,7 +110,7 @@ def render_chapter_five(bias_stats: dict[str, Any]) -> str:
           }}));
           Plotly.newPlot(plotId, traces, {{
             barmode: "group", yaxis: {{title: "Detected percentage (%)", range: [0, 100]}},
-            xaxis: {{title: "Prompt ${{chapterFiveTitle(promptAttribute)}}"}},
+            xaxis: {{title: `Prompt ${{chapterFiveTitle(promptAttribute)}}`}},
             margin: {{l: 60, r: 25, t: 20, b: 75}}, height: 340
           }}, {{responsive: true, displaylogo: false}});
         }}
@@ -185,4 +186,5 @@ def render_chapter_five(bias_stats: dict[str, Any]) -> str:
         '<p class="note">No double-variable observations are available.</p>';
     }}
   </script>
+  </div>
 """

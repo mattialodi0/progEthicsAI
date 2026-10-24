@@ -159,8 +159,16 @@ def build_report(
     .checkbox-grid label {{ cursor: pointer; }}
     .plot-card {{ background: #fff; border: 1px solid #d9e2ec; border-radius: 8px;
       margin-top: 1rem; padding: 1rem; }}
+    .pyplot-figure {{ background: #fff; display: block; height: auto; max-width: 100%;
+      width: 100%; }}
     .plot-grid {{ display: grid; gap: 1rem; grid-template-columns:
       repeat(auto-fit, minmax(320px, 1fr)); }}
+    .chapter-3-mode-group {{ margin-top: 1rem; }}
+    .chapter-3-mode-group > .plot-card {{ margin-top: 0; }}
+    #chapter-3-diversity-scores > .plot-card {{ margin-top: 1rem; }}
+    @media (max-width: 700px) {{
+      .plot-grid {{ grid-template-columns: 1fr; }}
+    }}
     .svg-figure {{ margin: .75rem 0; min-width: 0; }}
     .svg-figure svg {{ background: #f8fafc; border: 1px solid #d9e2ec;
       border-radius: 6px; display: block; max-width: 100%; min-height: 80px;
@@ -173,6 +181,7 @@ def build_report(
     .pie-layout {{ align-items: center; display: flex; flex-wrap: wrap; gap: 1.25rem; }}
     .pie-chart {{ border: 1px solid #d9e2ec; border-radius: 50%; flex: 0 0 190px;
       height: 190px; width: 190px; }}
+    #chapter-container {{ margin: 20px }}
   </style>
 </head>
 <body>
@@ -190,7 +199,6 @@ def build_report(
       <a class="subitem" href="#chapter-2-attributes" data-section-link="chapter-2-attributes">Prompt attributes</a>
       <a class="subitem" href="#chapter-2-prompts" data-section-link="chapter-2-prompts">Images per prompt</a>
       <a class="subitem" href="#chapter-2-detections" data-section-link="chapter-2-detections">Detection rates</a>
-      <a class="subitem" href="#chapter-2-settings" data-section-link="chapter-2-settings">Generation settings</a>
       <a class="supitem" href="#chapter-3" data-section-link="chapter-3">3. Demographic representation and diversity</a>
       <a class="subitem" href="#chapter-3-controls" data-section-link="chapter-3-controls">Prompt modes</a>
       <a class="subitem" href="#chapter-3-distributions" data-section-link="chapter-3-distributions">Demographic distributions</a>

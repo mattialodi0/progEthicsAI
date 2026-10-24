@@ -162,7 +162,7 @@ def render_chapter_two(coverage: dict[str, Any]) -> str:
     mode_counts = coverage["mode_counts"]
     mode_chart = chart(
         go.Figure(go.Bar(x=list(mode_counts), y=list(mode_counts.values()))),
-        title="Images by prompt mode",
+        title="",
     )
     detection = coverage["valid_detection"]
     features = list(detection)
@@ -217,7 +217,7 @@ def render_chapter_two(coverage: dict[str, Any]) -> str:
         )
 
     attribute_sections = "".join(
-        attribute_section(attribute, values)
+        attribute_section(attribute.capitalize().replace("_", " "), values)
         for attribute, values in coverage["attribute_counts"].items()
     )
     conditioned = coverage["conditioned_images"]
@@ -236,30 +236,26 @@ def render_chapter_two(coverage: dict[str, Any]) -> str:
         title="Images conditioned by prompt variable",
     ) if conditioned else '<p class="note">No configured prompt variables found.</p>'
     return f"""
-  <div class="eyebrow">Chapter 2</div>
-  <h2 id="chapter-2">Dataset and generation coverage</h2>
-  <p class="note">This chapter describes what was actually tested. Counts are
-  based on metadata records and prompt text; missing detections are not treated
-  as evidence that an attribute is absent from an image.</p>
-  <section><h3>Prompts by mode</h3>{mode_chart}</section>
-  <section id="chapter-2-attributes"><h3>Prompt attributes</h3>
-    <p class="note">Bars show the relative number of generated images whose
-    prompt contains each configured value.</p>
-    <h4>Images conditioned by prompt variable</h4>
-    {conditioning_chart}
-    {attribute_sections}
-  </section>
-  <section id="chapter-2-prompts"><h3>Images per prompt</h3>
-    <p>{len(coverage["prompt_images"])} unique prompts produced
-    {sum(coverage["prompt_images"].values())} images.</p>
-    {prompt_chart}
-  </section>
-  <section id="chapter-2-detections"><h3>Valid detection rate by extracted feature</h3>
-    {detection_table}
-  </section>
-  <section id="chapter-2-settings"><h3>Generation settings distribution</h3>
-    <pre>{html.escape(json.dumps(coverage["generation_settings_distribution"], indent=2, ensure_ascii=True))}</pre>
-    <p class="note">Per-image distributions require settings to be stored in
-    each metadata record.</p>
-  </section>
+    <div id="chapter-container">
+      <div class="eyebrow">Chapter 2</div>
+      <h2 id="chapter-2">Dataset and generation coverage</h2>
+      <p class="note">This chapter describes what was actually tested. 
+      We reported the prompts used to generate the images, with their types, attributes and counts.</p>
+      <section><h3>Prompt modes</h3>
+       <p class="note">Distribution of prompts by their mode.</p>{mode_chart}</section>
+      <section id="chapter-2-attributes"><h3>Prompt attributes</h3>
+        <h4>Prompts per attribute</h4>
+        {conditioning_chart}
+        <h4>Prompt variables</h4>
+        {attribute_sections}
+      </section>
+      <section id="chapter-2-prompts"><h3>Images per prompt</h3>
+        <p>{len(coverage["prompt_images"])} unique prompts produced
+        {sum(coverage["prompt_images"].values())} images.</p>
+        {prompt_chart}
+      </section>
+      <section id="chapter-2-detections"><h3>Valid detection rate by extracted feature</h3>
+        {detection_table}
+      </section>
+    </div>
 """
