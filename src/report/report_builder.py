@@ -158,7 +158,8 @@ def build_report(
     .checkbox-grid {{ display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; }}
     .checkbox-grid label {{ cursor: pointer; }}
     .plot-card {{ background: #fff; border: 1px solid #d9e2ec; border-radius: 8px;
-      margin-top: 1rem; padding: 1rem; }}
+      margin-top: 1rem; min-width: 0; overflow: visible; padding: 1rem; }}
+    .plot-card > div {{ min-width: 0; max-width: 100%; }}
     .pyplot-figure {{ background: #fff; display: block; height: auto; max-width: 100%;
       width: 100%; }}
     .plot-grid {{ display: grid; gap: 1rem; grid-template-columns:

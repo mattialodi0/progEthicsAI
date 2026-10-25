@@ -7,7 +7,7 @@ from typing import Any
 
 
 def render_chapter_five(bias_stats: dict[str, Any]) -> str:
-    """Render selectable conditional bar or pie charts."""
+    """Render selectable conditional bar, pie, or heatmap charts."""
     serialized = json.dumps(bias_stats, ensure_ascii=True).replace("</", "<\\/")
     return f"""
     <div id="chapter-container">
@@ -19,10 +19,9 @@ def render_chapter_five(bias_stats: dict[str, Any]) -> str:
   <section id="chapter-5-single-variable" aria-labelledby="chapter-5-single-heading">
     <h3 id="chapter-5-single-heading">5.1 Single-variable–attribute association matrices</h3>
     <p>Each plot shows the detected output distribution conditional on one
-    prompt category. Percentages are normalized within each prompt category.
-    Images missing either the prompt category or detected feature are excluded
-    from that plot. Cramér's V summarizes association strength from the
-    contingency table, while the Pearson chi-square p-value indicates the
+    prompt category. 
+    You can interact with the controls below to select which prompt attribute and detected feature to visualize, as well as the type of chart to display (bar, pie, or heatmap).
+    Cramér's V summarizes association strength from the contingency table, while the Pearson chi-square p-value indicates the
     uncertainty of the association test.</p>
     <div id="chapter-5-controls" class="checkbox-grid" aria-label="Association plot selectors"></div>
     <div id="chapter-5-associations" class=""></div>
@@ -48,6 +47,13 @@ def render_chapter_five(bias_stats: dict[str, Any]) -> str:
     }};
     const chapterFiveTitle = (value) =>
       chapterFiveLabels[value] || value.replaceAll("_", " ");
+    const chapterFiveHeatmapScales = ["Magma"];
+    const chapterFiveHeatmapScale = (promptAttribute, outputFeature) => {{
+      const key = `${{promptAttribute}}:${{outputFeature}}`;
+      const index = Array.from(key).reduce(
+        (total, character) => total + character.charCodeAt(0), 0);
+      return chapterFiveHeatmapScales[index % chapterFiveHeatmapScales.length];
+    }};
     const chapterFiveSafe = (value) =>
       String(value).replace(/[&<>"']/g, (character) =>
         ({{"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}})[character]);
@@ -99,6 +105,36 @@ def render_chapter_five(bias_stats: dict[str, Any]) -> str:
             margin: {{l: 30, r: 30, t: 20, b: 30}}, height: chartHeight,
             showlegend: true
           }}, {{responsive: true, displaylogo: false}});
+        }} else if (chartType === "heatmap") {{
+          const zValues = matrix.rows.map((row) =>
+            matrix.columns.map((column) => matrix.percentages[row][column]));
+          const countValues = matrix.rows.map((row) =>
+            matrix.columns.map((column) => matrix.counts[row][column]));
+          Plotly.newPlot(plotId, [{{
+            type: "heatmap",
+            x: matrix.columns,
+            y: matrix.rows,
+            z: zValues,
+            customdata: countValues,
+            texttemplate: "%{{z:.1f}}%",
+            colorscale: chapterFiveHeatmapScale(promptAttribute, outputFeature),
+            zmin: 0,
+            zmax: 100,
+            hovertemplate: "Prompt: %{{y}}<br>Detected: %{{x}}<br>" +
+              "%{{z:.1f}}%<br>%{{customdata}} observations<extra></extra>",
+            colorbar: {{title: "Percentage (%)"}}
+          }}], {{
+            autosize: true,
+            xaxis: {{
+              title: {{text: `Detected ${{chapterFiveTitle(outputFeature)}}`, standoff: 12}},
+              automargin: true, tickangle: -35, tickfont: {{size: 11}}
+            }},
+            yaxis: {{
+              title: {{text: `Prompt ${{chapterFiveTitle(promptAttribute)}}`, standoff: 12}},
+              automargin: true, tickfont: {{size: 11}}
+            }},
+            margin: {{l: 20, r: 25, t: 20, b: 90}}, height: 380
+          }}, {{responsive: true, displaylogo: false}});
         }} else {{
           const traces = matrix.columns.map((column) => ({{
             type: "bar",
@@ -130,7 +166,8 @@ def render_chapter_five(bias_stats: dict[str, Any]) -> str:
         chapterFiveControl("output-feature", value, index == 3)).join("") +
       '</fieldset><fieldset><legend>Chart type</legend>' +
       '<label><input type="radio" name="chart-type" value="bar" checked> Bar</label>' +
-      '<label><input type="radio" name="chart-type" value="pie"> Pie</label></fieldset>';
+      '<label><input type="radio" name="chart-type" value="pie"> Pie</label>' +
+      '<label><input type="radio" name="chart-type" value="heatmap"> Heatmap</label></fieldset>';
     document.querySelectorAll("#chapter-5-controls input").forEach((input) =>
       input.addEventListener("change", chapterFiveRender));
     chapterFiveRender();

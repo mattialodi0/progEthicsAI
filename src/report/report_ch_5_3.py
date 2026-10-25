@@ -7,7 +7,7 @@ from typing import Any
 
 
 def render_stereotypical_associations(bias_stats: dict[str, Any]) -> str:
-    """Render the most frequent object associations for jobs and workplaces."""
+    """Render the most frequent object associations for prompt contexts."""
     associations = bias_stats.get("stereotypical_associations", {})
     serialized = json.dumps(associations, ensure_ascii=True).replace("</", "<\\/")
     return f"""
@@ -15,7 +15,7 @@ def render_stereotypical_associations(bias_stats: dict[str, Any]) -> str:
   <section id="chapter-5-stereotypical" aria-labelledby="chapter-5-stereotypical-heading">
     <h3 id="chapter-5-stereotypical-heading">5.3 Stereotypical item associations</h3>
     <p>These tables show which detected objects most often co-occur with each
-    prompted job or workplace. Each object is counted once per image, even if
+    prompted job, workplace, continent, toxic trait, or positive trait. Each object is counted once per image, even if
     detected multiple times. Lift compares the conditional prevalence for a
     group with the object's overall prevalence:
     <strong>Lift(A, B) = P(B | A) / P(B)</strong>. Values above 1 indicate
@@ -31,10 +31,15 @@ def render_stereotypical_associations(bias_stats: dict[str, Any]) -> str:
   </section>
   <script>
     const chapterFiveThreeData = {serialized};
+    const chapterFiveThreeLabels = {{
+      job: "Job", workplace: "Workplace", continent: "Continent",
+      toxic_trait: "Toxic trait", positive_trait: "Positive trait"
+    }};
     const chapterFiveThreeSafe = (value) =>
       String(value).replace(/[&<>"']/g, (character) =>
         ({{"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}})[character]);
     const chapterFiveThreeTitle = (value) =>
+      chapterFiveThreeLabels[value] ||
       String(value).replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
     const chapterFiveThreeFormat = (value) =>
       value === null || value === undefined ? "n/a" : Number(value).toFixed(2);

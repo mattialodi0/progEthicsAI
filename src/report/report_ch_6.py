@@ -118,10 +118,10 @@ def render_chapter_six(data: dict[str, Any]) -> str:
     <div id="chapter-container">
   <div class="eyebrow">Chapter 6</div>
   <h2 id="chapter-6">Counterfactual analysis</h2>
-  <p class="subtitle">Matched prompts differ only in the investigated attribute.
-  Metrics and plots below are computed before report rendering.</p>
+  <p class="subtitle">Counterfactual analysis investigates what changes
+    when one prompt attribute changes while the rest of the prompt remains fixed.</p>
   <section id="chapter-6-overview">
-    <h3>6.1 and 6.2 Overview</h3>
+    <h3>Overview</h3>
     {_metrics_table(data)}
     <p class="note">{html.escape(str(data.get("caveat", "")))}</p>
   </section>

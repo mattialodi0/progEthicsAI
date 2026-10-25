@@ -23,7 +23,13 @@ PROMPT_ATTRIBUTES = (
     "positive_trait",
 )
 OUTPUT_FEATURES = ("gender", "race", "age", "emotion")
-OBJECT_ASSOCIATION_ATTRIBUTES = ("job", "workplace")
+OBJECT_ASSOCIATION_ATTRIBUTES = (
+    "job",
+    "workplace",
+    "continent",
+    "toxic_trait",
+    "positive_trait",
+)
 NON_OBJECT_LABELS = {
     "face",
     "human face",
@@ -320,7 +326,7 @@ def _association_matrix(
 
 
 def _stereotypical_associations(data: list[dict[str, Any]]) -> dict[str, Any]:
-    """Summarize detected object prevalence conditional on jobs and workplaces."""
+    """Summarize detected object prevalence conditional on prompt contexts."""
     groups: dict[str, Counter[str]] = {
         attribute: Counter() for attribute in OBJECT_ASSOCIATION_ATTRIBUTES
     }
@@ -507,6 +513,7 @@ def _interaction_model(
                 "first": first,
                 "second": second,
                 "estimate": round(full[0][index], 6),
+                "effect_percentage_points": round(100 * full[0][index], 4),
             }
             for index, column in enumerate(columns)
             if len(column) == 3 and column[0] == "interaction"
@@ -585,6 +592,61 @@ def _intersectional_analysis(data: list[dict[str, Any]]) -> dict[str, Any]:
                     "n": sample_size,
                     "values": percentages,
                 })
+            first_levels = sorted({row["first"] for row in rows})
+            second_levels = sorted({row["second"] for row in rows})
+            difference_in_differences: dict[str, Any] = {}
+            if len(first_levels) >= 2 and len(second_levels) >= 2:
+                did_first_levels = first_levels[:2]
+                # Report the change from the last sorted level to the first,
+                # matching the conventional baseline-then-comparison reading
+                # used in the report (e.g. White gap versus Black gap).
+                did_second_levels = [second_levels[-1], second_levels[0]]
+                for category in categories:
+                    points = [
+                        {
+                            "first": row["first"],
+                            "second": row["second"],
+                            "percentage": row["values"][category]["percentage"],
+                            "n": row["n"],
+                        }
+                        for row in rows
+                        if row["first"] in did_first_levels
+                    ]
+                    gaps = []
+                    for second in second_levels:
+                        values = {
+                            row["first"]: row["values"][category]["percentage"]
+                            for row in rows
+                            if row["second"] == second
+                            and row["first"] in did_first_levels
+                        }
+                        if len(values) == 2:
+                            gaps.append({
+                                "second": second,
+                                "difference_percentage_points": round(
+                                    values[did_first_levels[1]]
+                                    - values[did_first_levels[0]],
+                                    4,
+                                ),
+                            })
+                    comparison_gaps = {
+                        gap["second"]: gap["difference_percentage_points"]
+                        for gap in gaps
+                    }
+                    if all(second in comparison_gaps for second in did_second_levels):
+                        difference_in_differences[category] = {
+                            "available": True,
+                            "first_levels": did_first_levels,
+                            "second_levels": second_levels,
+                            "comparison_levels": did_second_levels,
+                            "points": points,
+                            "gaps": gaps,
+                            "difference_in_differences_percentage_points": round(
+                                comparison_gaps[did_second_levels[1]]
+                                - comparison_gaps[did_second_levels[0]],
+                                4,
+                            ),
+                        }
             models = []
             for category in categories:
                 category_observations = []
@@ -612,6 +674,7 @@ def _intersectional_analysis(data: list[dict[str, Any]]) -> dict[str, Any]:
                 "rows": rows,
                 "forest": forest,
                 "models": models,
+                "difference_in_differences": difference_in_differences,
                 "total": sum(row["n"] for row in rows),
             }
         if outputs:
