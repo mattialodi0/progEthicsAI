@@ -23,6 +23,181 @@ def _bar_chart(data: dict[str, Any]) -> str:
     return chart(figure, title="", height=360)
 
 
+def _transition_selector(
+    data: dict[str, Any],
+    *,
+    prefix: str,
+    description: str,
+    double: bool = False,
+) -> str:
+    serialized = json.dumps(data, ensure_ascii=True).replace("</", "<\\/")
+    return f"""
+            <p>{description}</p>
+            <div class="checkbox-grid" aria-label="{prefix} selectors">
+              <label>Changing attribute
+                <select id="{prefix}-variable"></select>
+              </label>
+              <label>Before
+                <select id="{prefix}-start"></select>
+              </label>
+              <label>After
+                <select id="{prefix}-end"></select>
+              </label>
+              <div id="{prefix}-fixed-selectors"></div>
+            </div>
+            <div id="{prefix}-plots" aria-live="polite"></div>
+            <script>
+              const {prefix}Data = {serialized};
+              const {prefix}Title = (value) => String(value).replaceAll("_", " ")
+                .replace(/\b\w/g, (letter) => letter.toUpperCase());
+              const {prefix}Variable = document.getElementById("{prefix}-variable");
+              const {prefix}Start = document.getElementById("{prefix}-start");
+              const {prefix}End = document.getElementById("{prefix}-end");
+              const {prefix}Fixed = document.getElementById("{prefix}-fixed-selectors");
+              const {prefix}Plots = document.getElementById("{prefix}-plots");
+              const {prefix}Pairs = {prefix}Data.pairs || [];
+              const {prefix}Attributes = {prefix}Data.control_attributes || [];
+              const {prefix}Detected = Array.from(new Set(
+                {prefix}Data.detected_attributes || []));
+              const {prefix}Option = (value) =>
+                '<option value="' + value + '">' + {prefix}Title(value) + "</option>";
+              const {prefix}Missing = (value) => value === null || value === undefined
+                ? "missing" : String(value);
+              const {prefix}Render = () => {{
+                const variable = {prefix}Variable.value;
+                const available = {{}};
+                {prefix}Pairs.filter((pair) => pair.variable_attribute === variable)
+                  .forEach((pair) => {{
+                    {(" (available[pair.fixed_attribute] ||= new Set()).add(pair.fixed_value);" if double else
+                       "Object.entries(pair.fixed_values || {}).forEach(([attribute, value]) => " +
+                       "(available[attribute] ||= new Set()).add(value));")}
+                  }});
+                const fixedAttributes = {(
+                    "Object.keys(available).sort()"
+                    if double else
+                    f"{prefix}Attributes.filter((attribute) => attribute !== variable)"
+                )};
+                {(
+                    f'''{prefix}Fixed.innerHTML =
+                  '<label>Fixed attribute<select id="{prefix}-fixed-attribute">' +
+                  fixedAttributes.map({prefix}Option).join("") +
+                  '</select></label><label>Fixed value<select id="{prefix}-fixed-value"></select></label>';
+                const fixedAttribute = document.getElementById("{prefix}-fixed-attribute");
+                const fixedValue = document.getElementById("{prefix}-fixed-value");
+                const updateFixedValues = () => {{
+                  fixedValue.innerHTML = Array.from(available[fixedAttribute.value] || [])
+                    .sort().map({prefix}Option).join("");
+                }};
+                fixedAttribute.addEventListener("change", () => {{
+                  updateFixedValues();
+                  draw();
+                }});
+                updateFixedValues();'''
+                    if double else
+                    f'''{prefix}Fixed.innerHTML = fixedAttributes.map((attribute) => {{
+                  const values = Array.from(available[attribute] || []).sort();
+                  return "<label>Fix " + {prefix}Title(attribute) +
+                    '<select data-attribute="' + attribute + '">' +
+                    values.map({prefix}Option).join("") + "</select></label>";
+                }}).join("");'''
+                )}
+                const transitions = Array.from(new Set(
+                  {prefix}Pairs.filter((pair) => pair.variable_attribute === variable)
+                    .flatMap((pair) => pair.variable_values || [])
+                )).sort();
+                const previousStart = {prefix}Start.value;
+                const previousEnd = {prefix}End.value;
+                {prefix}Start.innerHTML = transitions.map({prefix}Option).join("");
+                {prefix}End.innerHTML = transitions.map({prefix}Option).join("");
+                {prefix}Start.value = transitions.includes(previousStart)
+                  ? previousStart : (transitions[0] || "");
+                {prefix}End.value = transitions.includes(previousEnd)
+                  ? previousEnd : (transitions[transitions.length - 1] || "");
+                const selected = () => {(
+                    f'''({{
+                  attribute: document.getElementById("{prefix}-fixed-attribute").value,
+                  value: document.getElementById("{prefix}-fixed-value").value
+                }})'''
+                    if double else
+                    f'''Object.fromEntries(
+                  Array.from({prefix}Fixed.querySelectorAll("select")).map((select) =>
+                    [select.dataset.attribute, select.value]))'''
+                )};
+                const matching = () => {prefix}Pairs.filter((pair) => {{
+                  if (pair.variable_attribute !== variable) return false;
+                  if ((pair.variable_values || [])[0] !== {prefix}Start.value ||
+                      (pair.variable_values || [])[1] !== {prefix}End.value) return false;
+                  const chosen = selected();
+                  return {(
+                      "pair.fixed_attribute === chosen.attribute && pair.fixed_value === chosen.value"
+                      if double else
+                      "Object.entries(chosen).every(([attribute, value]) => " +
+                      "pair.fixed_values && pair.fixed_values[attribute] === value)"
+                  )};
+                }});
+                const draw = () => {{
+                  const pairs = matching();
+                  if (!pairs.length) {{
+                    {prefix}Plots.innerHTML =
+                      '<p class="note">No matched pairs fit these selections.</p>';
+                    return;
+                  }}
+                  const attributes = {prefix}Detected.filter(
+                    (attribute) => attribute !== variable);
+                  const labels = attributes.flatMap((attribute) =>
+                    [{prefix}Title(attribute) + ' (before)', {prefix}Title(attribute) + ' (after)']);
+                  const categories = Array.from(new Set(attributes.flatMap((attribute) =>
+                    pairs.flatMap((pair) => [
+                      {prefix}Missing(pair.detected.first[attribute]),
+                      {prefix}Missing(pair.detected.second[attribute])
+                    ])))).sort();
+                  const counts = (attribute, side, category) => pairs.filter((pair) =>
+                    {prefix}Missing(pair.detected[side][attribute]) === category).length;
+                  {prefix}Plots.innerHTML = '<div id="{prefix}-plot"></div>';
+                  const traces = categories.map((category) => ({{
+                    type: "bar",
+                    name: {prefix}Title(category),
+                    x: labels,
+                    y: attributes.flatMap((attribute) => [
+                      counts(attribute, "first", category),
+                      counts(attribute, "second", category)
+                    ]),
+                    text: attributes.flatMap((attribute) => [
+                      counts(attribute, "first", category) ? {prefix}Title(category) : "",
+                      counts(attribute, "second", category) ? {prefix}Title(category) : ""
+                    ]),
+                    textposition: "inside",
+                    insidetextanchor: "middle",
+                    hovertemplate: "%{{x}}<br>Detected: %{{text}}<br>Pairs: %{{y}}<extra></extra>"
+                  }}));
+                  Plotly.react(document.getElementById("{prefix}-plot"), traces, {{
+                    barmode: "stack",
+                    height: Math.max(420, attributes.length * 80),
+                    margin: {{l: 65, r: 25, t: 20, b: 100}},
+                    yaxis: {{title: "Matched pairs"}},
+                    template: "plotly_white"
+                  }}, {{responsive: true, displaylogo: false}});
+                }};
+                {(
+                    f'''document.getElementById("{prefix}-fixed-value")
+                  .addEventListener("change", draw);'''
+                    if double else
+                    f'''{prefix}Fixed.querySelectorAll("select").forEach((select) =>
+                  select.addEventListener("change", draw));'''
+                )}
+                {prefix}Start.addEventListener("change", draw);
+                {prefix}End.addEventListener("change", draw);
+                draw();
+              }};
+              {prefix}Variable.innerHTML = {prefix}Attributes.map({prefix}Option).join("");
+              {prefix}Variable.addEventListener("change", {prefix}Render);
+              if ({prefix}Attributes.length) {prefix}Render();
+              else {prefix}Plots.innerHTML =
+                '<p class="note">No matching analysis is available.</p>';
+            </script>
+"""
+
+
 def _transition_heatmap(data: dict[str, Any]) -> str:
     transitions = data.get("by_attribute", {})
     labels = sorted({
@@ -58,10 +233,12 @@ def _numerical_plots(data: dict[str, Any]) -> str:
                 figure.add_trace(go.Box(y=values, name=attribute, boxmean=True))
         if figure.data:
             figure.update_yaxes(title="Counterfactual difference")
-            figures.append(chart(figure, title=f"", height=360))
-    return "".join(f'<article class="plot-card"><h4>6.1.{3+figures.index(figure)} Paired differences: {features[figures.index(figure)]}</h4>{figure}</article>' for figure in figures) or (
-        '<p class="note">No paired numerical features are available.</p>'
-    )
+            figures.append(chart(figure, title="", height=360))
+    return "".join(
+        f'<article class="plot-card"><h4>6.1.{3 + index} Paired differences: '
+        f'{features[index]}</h4>{figure}</article>'
+        for index, figure in enumerate(figures)
+    ) or '<p class="note">No paired numerical features are available.</p>'
 
 
 def _embedding_plots(data: dict[str, Any]) -> str:
@@ -114,13 +291,20 @@ def _metrics_table(data: dict[str, Any]) -> str:
 
 def render_chapter_six(data: dict[str, Any]) -> str:
     """Render metrics and plots from the precomputed chapter-6 artifact."""
-    serialized = json.dumps(data, ensure_ascii=True).replace("</", "<\\/")
     return f"""
     <div id="chapter-container">
   <div class="eyebrow">Chapter 6</div>
   <h2 id="chapter-6">Counterfactual analysis</h2>
   <p class="subtitle">Counterfactual analysis investigates what changes
-    when one prompt attribute changes while the rest of the prompt remains fixed.</p>
+    when one prompt attribute changes while the rest of the prompt remains fixed.
+    The featrues and metrics we will use are:</p>
+    <ul>
+      <li>Distribution of detected features: the distribution of attributes detected by the model in the generated images.</li>
+      <li>Embeddings: the image embeddings extracted from the generated images.</li>
+      <li>Detected change: the percentage of matched pairs where the detected categorical features changed.</li>
+      <li>Example adherence: the percentage of matched pairs where the generated images adhered to the intended attribute change.</li>
+      <li>Mean paired cosine distance: the mean cosine distance between the embeddings of matched pairs.</li>
+    </ul>
   <section id="chapter-6-overview">
     <h3>Overview</h3>
     {_metrics_table(data)}
@@ -128,34 +312,32 @@ def render_chapter_six(data: dict[str, Any]) -> str:
   </section>
   <section id="chapter-6-features">
     <h3>6.1 Counterfactual analysis from extracted features</h3>
-    <p>These results compare detected categories, adherence, and paired numerical
-    feature differences for prompt-matched counterfactuals.</p>
-    <div class="">
-        <article class="plot-card">
-            <h4>6.1.1 Detected category changes</h4>
-            {_bar_chart(data)}
-            <p>x-axis: the changed prompt attribute<br>y-axis: the percentage of matched pairs where the detected category changed</p>
-        </article>
-        <article class="plot-card">
-            <h4>6.1.2 Transition heatmap</h4>
-            {_transition_heatmap(data)}
-            <p>x-axis: the changed prompt attribute<br>y-axis: the percentage of matched pairs where the detected category changed</p>
-        </article>
-    </div>
-    <div class="">
-        <p>The plotted value is: feature in second image - feature in first image, for each attribute.</p>
-        {_numerical_plots(data)}
-    </div>
+    <p>Each transition heatmap uses detected values on both axes. Cells show
+    the number of matched pairs transitioning from the y-axis value to the x-axis value.</p>
+    <article class="plot-card">
+      <h4>6.1.1 Detected value transitions in control prompts</h4>
+      {_transition_selector(data.get("control_analysis", {}), prefix="chapterSixControl",
+                            description="Select the changing attribute, its before and after values, and the three fixed attribute values.")
+      }
+    </article>
+    <article class="plot-card">
+      <h4>6.1.2 Detected value transitions in double-attribute prompts</h4>
+      {_transition_selector(data.get("double_analysis", {}), prefix="chapterSixDouble",
+                            description="Select the changing attribute, its before and after values, and the fixed attribute value.",
+                            double=True)
+      }
+    </article>
+    <article class="plot-card">
+      <h4>6.1.3 Aggregate detected category changes</h4>
+      {_bar_chart(data)}
+    </article>
   </section>
   <section id="chapter-6-embeddings">
     <h3>6.2 Counterfactual analysis from embeddings</h3>
     <p>Cosine distance measures semantic change between paired image embeddings.
     Distances are descriptive and should not be interpreted as bias without
     considering the intended attribute change.</p>
-    <article class="plot-card">        
-        {_embedding_plots(data)}
-    </article>
+    <article class="plot-card">{_embedding_plots(data)}</article>
   </section>
-  <script>window.chapterSixData = {serialized};</script>
 </div>
 """

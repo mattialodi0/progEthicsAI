@@ -8,7 +8,13 @@ import re
 from statistics import mean, median
 from typing import Any
 
-from .general_statistics import _adherence_value, _canonical_demographic_value, _embedding
+from .general_statistics import (
+    MAIN_ATTRIBUTES,
+    _adherence_value,
+    _canonical_demographic_value,
+    _detected_value,
+    _embedding,
+)
 
 
 COUNTERFACTUAL_ATTRIBUTES = ("gender", "race", "age", "emotion", "job", "workplace")
@@ -27,6 +33,8 @@ PROMPT_VALUES = {
         "laboratory", "construction site",
     ),
 }
+CONTROL_ATTRIBUTES = ("gender", "race", "age", "job")
+DETECTED_ATTRIBUTES = tuple(dict.fromkeys((*MAIN_ATTRIBUTES, "emotion")))
 
 
 def _prompt_key(prompt: str, attribute: str, value: str) -> str:
@@ -200,6 +208,118 @@ def _attribute_analysis(
     }
 
 
+def _matched_attribute_pairs(
+    data: list[dict[str, Any]],
+    *,
+    mode: str,
+    required_attributes: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    """Return pairs that vary one requested attribute and fix the rest."""
+    pairs: list[dict[str, Any]] = []
+    for variable in required_attributes:
+        variable_groups: defaultdict[
+            tuple[str, ...], defaultdict[str, list[dict[str, Any]]]
+        ] = defaultdict(lambda: defaultdict(list))
+        for index, record in enumerate(data):
+            if str(record.get("mode")) != mode:
+                continue
+            values = tuple(_condition(record, attribute) for attribute in required_attributes)
+            if any(value is None for value in values):
+                continue
+            variable_index = required_attributes.index(variable)
+            fixed_values = values[:variable_index] + values[variable_index + 1:]
+            item = dict(record)
+            item["_counterfactual_index"] = index
+            variable_groups[fixed_values][values[variable_index]].append(item)
+        for fixed_values, by_value in variable_groups.items():
+            for left, right in combinations(sorted(by_value), 2):
+                for first, second in zip(
+                    sorted(by_value[left], key=lambda item: item["_counterfactual_index"]),
+                    sorted(by_value[right], key=lambda item: item["_counterfactual_index"]),
+                ):
+                    pairs.append({
+                        "variable_attribute": variable,
+                        "variable_values": [left, right],
+                        "fixed_values": {
+                            attribute: value
+                            for attribute, value in zip(
+                                (attribute for attribute in required_attributes if attribute != variable),
+                                fixed_values,
+                            )
+                        },
+                        "detected": {
+                            side: {
+                                attribute: _detected_value(record, attribute)
+                                for attribute in DETECTED_ATTRIBUTES
+                            }
+                            for side, record in (("first", first), ("second", second))
+                        },
+                    })
+    return pairs
+
+
+def _control_pairs(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return matched pairs from four-attribute control prompts."""
+    return _matched_attribute_pairs(
+        data, mode="0", required_attributes=CONTROL_ATTRIBUTES
+    )
+
+
+def _double_pairs(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return matched pairs from prompts specifying exactly two attributes."""
+    pairs: list[dict[str, Any]] = []
+    for index, record in enumerate(data):
+        if str(record.get("mode")) != "2":
+            continue
+        features = record.get("prompt_feats")
+        if not isinstance(features, dict):
+            continue
+        specified = tuple(
+            attribute for attribute in CONTROL_ATTRIBUTES
+            if _condition(record, attribute) is not None
+        )
+        if len(specified) != 2:
+            continue
+        pairs.append((index, record, specified))
+
+    result: list[dict[str, Any]] = []
+    pair_specs = {
+        spec
+        for _, _, specified in pairs
+        for spec in ((specified[0], specified[1]), (specified[1], specified[0]))
+    }
+    for variable, fixed in pair_specs:
+        groups: defaultdict[str, defaultdict[str, list[dict[str, Any]]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
+        for index, record, specified in pairs:
+            if specified != tuple(sorted((variable, fixed), key=CONTROL_ATTRIBUTES.index)):
+                continue
+            item = dict(record)
+            item["_counterfactual_index"] = index
+            groups[_condition(record, fixed)][_condition(record, variable)].append(item)
+        for fixed_value, by_value in groups.items():
+            for left, right in combinations(sorted(by_value), 2):
+                for first, second in zip(
+                    sorted(by_value[left], key=lambda item: item["_counterfactual_index"]),
+                    sorted(by_value[right], key=lambda item: item["_counterfactual_index"]),
+                ):
+                    result.append({
+                        "variable_attribute": variable,
+                        "variable_values": [left, right],
+                        "fixed_attribute": fixed,
+                        "fixed_value": fixed_value,
+                        "detected": {
+                            side: {
+                                attribute: _detected_value(record, attribute)
+                                for attribute in DETECTED_ATTRIBUTES
+                            }
+                            for side, record in (("first", first), ("second", second))
+                        },
+                    })
+    return result
+
+
 def build_counterfactual_analysis(data: list[dict[str, Any]]) -> dict[str, Any]:
     """Build all chapter-6 data without retaining raw records or embeddings."""
     results = {
@@ -210,6 +330,16 @@ def build_counterfactual_analysis(data: list[dict[str, Any]]) -> dict[str, Any]:
         "attributes": list(COUNTERFACTUAL_ATTRIBUTES),
         "numerical_features": list(NUMERICAL_FEATURES),
         "by_attribute": results,
+        "control_analysis": {
+            "control_attributes": list(CONTROL_ATTRIBUTES),
+            "detected_attributes": list(DETECTED_ATTRIBUTES),
+            "pairs": _control_pairs(data),
+        },
+        "double_analysis": {
+            "control_attributes": list(CONTROL_ATTRIBUTES),
+            "detected_attributes": list(DETECTED_ATTRIBUTES),
+            "pairs": _double_pairs(data),
+        },
         "caveat": (
             "Embedding distance is not itself a bias score: the requested "
             "attribute should change some image content. Interpret distances "
