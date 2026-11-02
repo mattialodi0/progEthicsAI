@@ -1,6 +1,19 @@
 # A framework to measure fairness for text-to-image generative models
 
-## Two-step analysis and reporting
+## Overview
+The code in this repository helps to analyze the fairness of any Text-to-Image model.
+The process is composed of the following phases:
+1) prompts genereation
+2) images generation
+3) features extraction
+4) feature analysis
+5) report generation
+Onxe they are over, the final result will be a report containing informations, evaluations, conclusions about the model fairness.
+
+## Prompts generation
+## Images generation
+## Features extraction
+## Feature Analysis and reporting
 
 Analysis and HTML rendering are separate steps. The analysis step reads the
 metadata, performs preprocessing and feature statistics, and writes a

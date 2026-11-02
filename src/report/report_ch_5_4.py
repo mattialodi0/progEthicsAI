@@ -85,14 +85,16 @@ def render_intersectional_analysis(bias_stats: dict[str, Any]) -> str:
         <div>
           <article class="plot-card"><h4>5.4.1 Intersectional heatmap</h4>
             <div id="chapter-five-four-heatmap" style="height:360px"></div></article>
-          <article class="plot-card"><h4>5.4.2 Same feature across joint groups</h4>
+          <article class="plot-card"><h4>5.4.2 In-depth category view across joint groups</h4>
             <div id="chapter-five-four-small-multiple" style="height:360px"></div></article>
           <article class="plot-card"><h4>5.4.3 Forest plot: joint minus constituent average</h4>
             <p>The forest plot shows the difference between the joint-group probability and the average of
             the two constituent-group probabilities for the selected category. </p>
-            <p>Difference > 0: the outcome is more common in the joint group than the constituent average would suggest.</p>
-            <p>Difference < 0: the outcome is less common.</p>
-            <p>Difference near 0: the joint group is close to the constituent average.</p>
+            <ul>
+              <li>Difference > 0: the outcome is more common in the joint group than the constituent average would suggest.</li>
+              <li>Difference < 0: the outcome is less common.</li>
+              <li>Difference near 0: the joint group is close to the constituent average.</li>
+            </ul>
             <p>Error bars show 95% confidence intervals.</p>
             <div id="chapter-five-four-forest" style="height:420px"></div></article>
           <article class="plot-card"><h4>5.4.4 Interaction effects</h4>

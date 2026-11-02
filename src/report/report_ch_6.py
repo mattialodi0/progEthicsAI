@@ -20,7 +20,7 @@ def _bar_chart(data: dict[str, Any]) -> str:
     ]
     figure = go.Figure(go.Bar(x=attributes, y=values, text=[f"{value:.1f}%" for value in values]))
     figure.update_yaxes(title="Changed detected category (%)", range=[0, 100])
-    return chart(figure, title="Detected attribute change rate", height=360)
+    return chart(figure, title="", height=360)
 
 
 def _transition_heatmap(data: dict[str, Any]) -> str:
@@ -43,12 +43,13 @@ def _transition_heatmap(data: dict[str, Any]) -> str:
         colorscale="Blues",
         colorbar={"title": "Pairs"},
     ))
-    return chart(figure, title="Heatmap of detected category changes", height=460)
+    return chart(figure, title="", height=460)
 
 
 def _numerical_plots(data: dict[str, Any]) -> str:
     figures = []
-    for feature in data.get("numerical_features", []):
+    features = data.get("numerical_features", [])
+    for feature in features:
         figure = go.Figure()
         for attribute in data.get("attributes", []):
             values = data.get("by_attribute", {}).get(attribute, {}).get(
@@ -57,8 +58,8 @@ def _numerical_plots(data: dict[str, Any]) -> str:
                 figure.add_trace(go.Box(y=values, name=attribute, boxmean=True))
         if figure.data:
             figure.update_yaxes(title="Counterfactual difference")
-            figures.append(chart(figure, title=f"Paired differences: {feature}", height=360))
-    return "".join(f'<article class="plot-card">{figure}</article>' for figure in figures) or (
+            figures.append(chart(figure, title=f"", height=360))
+    return "".join(f'<article class="plot-card"><h4>6.1.{3+figures.index(figure)} Paired differences: {features[figures.index(figure)]}</h4>{figure}</article>' for figure in figures) or (
         '<p class="note">No paired numerical features are available.</p>'
     )
 
@@ -129,16 +130,31 @@ def render_chapter_six(data: dict[str, Any]) -> str:
     <h3>6.1 Counterfactual analysis from extracted features</h3>
     <p>These results compare detected categories, adherence, and paired numerical
     feature differences for prompt-matched counterfactuals.</p>
-    <div class="plot-grid"><article class="plot-card">{_bar_chart(data)}</article>
-    <article class="plot-card">{_transition_heatmap(data)}</article></div>
-    <div class="plot-grid">{_numerical_plots(data)}</div>
+    <div class="">
+        <article class="plot-card">
+            <h4>6.1.1 Detected category changes</h4>
+            {_bar_chart(data)}
+            <p>x-axis: the changed prompt attribute<br>y-axis: the percentage of matched pairs where the detected category changed</p>
+        </article>
+        <article class="plot-card">
+            <h4>6.1.2 Transition heatmap</h4>
+            {_transition_heatmap(data)}
+            <p>x-axis: the changed prompt attribute<br>y-axis: the percentage of matched pairs where the detected category changed</p>
+        </article>
+    </div>
+    <div class="">
+        <p>The plotted value is: feature in second image - feature in first image, for each attribute.</p>
+        {_numerical_plots(data)}
+    </div>
   </section>
   <section id="chapter-6-embeddings">
     <h3>6.2 Counterfactual analysis from embeddings</h3>
     <p>Cosine distance measures semantic change between paired image embeddings.
     Distances are descriptive and should not be interpreted as bias without
     considering the intended attribute change.</p>
-    <article class="plot-card">{_embedding_plots(data)}</article>
+    <article class="plot-card">        
+        {_embedding_plots(data)}
+    </article>
   </section>
   <script>window.chapterSixData = {serialized};</script>
 </div>

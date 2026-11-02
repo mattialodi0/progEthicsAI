@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from itertools import combinations
-from math import sqrt
 from typing import Any
 
 from ..analysis.general_statistics import _distance, _embedding, _record_mode
@@ -174,27 +173,6 @@ def build_visual_feature_analysis(
             },
         }
 
-    correlation_matrix = []
-    for first in IMAGE_FEATURES:
-        row = []
-        for second in IMAGE_FEATURES:
-            pairs = [
-                (left, right) for left, right in zip(
-                    feature_values[first], feature_values[second]
-                ) if left is not None and right is not None
-            ]
-            if len(pairs) < 2:
-                row.append(None)
-                continue
-            left_mean = sum(left for left, _ in pairs) / len(pairs)
-            right_mean = sum(right for _, right in pairs) / len(pairs)
-            numerator = sum((left - left_mean) * (right - right_mean) for left, right in pairs)
-            denominator = sqrt(
-                sum((left - left_mean) ** 2 for left, _ in pairs)
-                * sum((right - right_mean) ** 2 for _, right in pairs)
-            )
-            row.append(round(numerator / denominator, 6) if denominator else 0.0)
-
     records = [
         (record, vector) for record in data
         if (vector := _embedding(record)) is not None
@@ -224,7 +202,6 @@ def build_visual_feature_analysis(
         }
     return {
         "image_features": features,
-        "correlation": {"features": list(IMAGE_FEATURES), "matrix": correlation_matrix},
         "embedding": {
             "n_embeddings": len(vectors),
             "group_by": groupings,
@@ -245,21 +222,22 @@ def render_chapter_seven(chapter_data: dict[str, Any]) -> str:
   <p class="subtitle">Measurable image properties and semantic representation are
   compared using the same observations and, for embeddings, the same projection.</p>
   <section id="chapter-7-features"><h3>7.1 Image-feature distributions</h3>
-    <p>Histograms show overall distributions; box plots compare subgroups, and the
-    heatmap shows Pearson correlations for the six available numerical features.</p>
+    <p>Histograms show overall distributions and box plots compare subgroups.</p>
     <div id="chapter-7-feature-controls" class="checkbox-grid"></div>
-    <div class="plot-grid"><article class="plot-card"><div id="chapter-7-feature-plot"></div></article>
-      <article class="plot-card"><div id="chapter-7-feature-groups"></div></article></div>
-    <article class="plot-card"><div id="chapter-7-correlation"></div></article>
+    <div class=""><article class="plot-card"><div id="chapter-7-feature-plot"></div></article>
+    <article class="plot-card"><div id="chapter-7-feature-groups"></div></article></div>
   </section>
   <section id="chapter-7-embeddings"><h3>7.2 Embedding distributions and cluster separability</h3>
     <p>PCA is fit once to all embeddings, so comparable groups share coordinates.
     UMAP is shown when available. Silhouette scores and within/between Euclidean
     distances are descriptive and depend on the selected grouping.</p>
     <div id="chapter-7-embedding-controls" class="checkbox-grid"></div>
-    <div class="plot-grid"><article class="plot-card"><div id="chapter-7-embedding-plot"></div></article>
-      <article class="plot-card"><div id="chapter-7-distance-plot"></div></article></div>
     <div id="chapter-7-separability"></div>
+    <article class="plot-card"><div id="chapter-7-embedding-plot"></div></article>
+    <div class="plot-grid">
+        <article class="plot-card"><div id="chapter-7-distance-plot"></div></article>
+        <article class="plot-card"><div id="chapter-7-cluster-separability"></div></article>
+    </div>
   </section>
   <script>
     const chapterSevenData = {serialized};
@@ -282,22 +260,22 @@ def render_chapter_seven(chapter_data: dict[str, Any]) -> str:
         ({{type: "box", y: values, name, boxpoints: "outliers"}})),
         {{title: `Subgroups by ${{chapterSevenTitle(chapterSevenState.grouping)}}`}},
         {{responsive: true, displaylogo: false}});
-      const correlation = chapterSevenData.correlation;
-      Plotly.newPlot("chapter-7-correlation", [{{z: correlation.matrix,
-        x: correlation.features.map(chapterSevenTitle), y: correlation.features.map(chapterSevenTitle),
-        type: "heatmap", zmin: -1, zmax: 1, colorscale: "RdBu", reversescale: true}}],
-        {{title: "Feature correlation matrix", margin: {{l: 130, b: 130}}}},
-        {{responsive: true, displaylogo: false}});
       const points = chapterSevenData.embedding.points.filter((point) => point[chapterSevenState.projection]);
-      const pointLabels = points.map(p => p.groups[chapterSevenState.grouping] || "unlabelled");
-      const labelCodes = Object.fromEntries([...new Set(pointLabels)].map((label, index) => [label, index]));
-      Plotly.newPlot("chapter-7-embedding-plot", [{{x: points.map(p => p[chapterSevenState.projection][0]),
-        y: points.map(p => p[chapterSevenState.projection][1]), mode: "markers", type: "scatter",
-        text: pointLabels,
-        marker: {{color: pointLabels.map(label => labelCodes[label]), colorscale: "Turbo",
-          showscale: false}},
-        hovertemplate: "%{{text}}<br>x=%{{x:.3f}}, y=%{{y:.3f}}<extra></extra>"}}],
-        {{title: `${{chapterSevenState.projection.toUpperCase()}} projection`}},
+      const pointsByLabel = new Map();
+      points.forEach((point) => {{
+        const label = point.groups[chapterSevenState.grouping] || "unlabelled";
+        if (!pointsByLabel.has(label)) pointsByLabel.set(label, []);
+        pointsByLabel.get(label).push(point);
+      }});
+      const embeddingTraces = [...pointsByLabel.entries()].map(([label, groupPoints]) => ({{
+        x: groupPoints.map(p => p[chapterSevenState.projection][0]),
+        y: groupPoints.map(p => p[chapterSevenState.projection][1]),
+        mode: "markers", type: "scatter", name: label,
+        hovertemplate: `${{label}}<br>x=%{{x:.3f}}, y=%{{y:.3f}}<extra></extra>`
+      }}));
+      Plotly.newPlot("chapter-7-embedding-plot", embeddingTraces,
+        {{title: `${{chapterSevenState.projection.toUpperCase()}} projection`,
+          legend: {{title: {{text: chapterSevenTitle(chapterSevenState.grouping)}}}}}},
         {{responsive: true, displaylogo: false}});
       const distances = chapterSevenData.embedding.groups[chapterSevenState.grouping].distances;
       Plotly.newPlot("chapter-7-distance-plot", [
@@ -305,6 +283,30 @@ def render_chapter_seven(chapter_data: dict[str, Any]) -> str:
         {{type: "box", y: distances.between, name: "Between groups"}}
       ], {{title: "Embedding distance distributions", yaxis: {{title: "Euclidean distance"}}}},
       {{responsive: true, displaylogo: false}});
+      const separabilityGroups = chapterSevenData.embedding.groups || {{}};
+      const separabilityEntries = Object.entries(separabilityGroups);
+      const separabilityElement = document.getElementById("chapter-7-cluster-separability");
+      if (!separabilityEntries.length) {{
+        separabilityElement.innerHTML =
+          '<p class="note">No cluster separability measurements are available.</p>';
+      }} else {{
+        const separabilityTrace = {{
+          type: "bar",
+          x: separabilityEntries.map(([grouping]) => chapterSevenTitle(grouping)),
+          y: separabilityEntries.map(([, item]) => item.separability.score),
+          customdata: separabilityEntries.map(([, item]) => [
+            item.separability.n_images, item.separability.n_clusters
+          ]),
+          hovertemplate: "%{{x}}<br>Silhouette score: %{{y:.3f}}" +
+            "<br>Embeddings: %{{customdata[0]}}<br>Groups: %{{customdata[1]}}<extra></extra>"
+        }};
+        Plotly.newPlot("chapter-7-cluster-separability", [separabilityTrace], {{
+          title: "Cluster separability by attribute",
+          xaxis: {{title: "Grouping attribute"}},
+          yaxis: {{title: "Silhouette score", range: [-1, 1]}},
+          margin: {{b: 100}}
+        }}, {{responsive: true, displaylogo: false}});
+      }}
       const separation = chapterSevenData.embedding.groups[chapterSevenState.grouping].separability;
       document.getElementById("chapter-7-separability").innerHTML =
         `<p class="note">Silhouette score: <strong>${{separation.score === null ? "Not available" :
