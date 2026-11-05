@@ -183,14 +183,41 @@ def _group_records(
     return dict(sorted(groups.items()))
 
 
+def _pairwise_embedding_stats(
+    vectors: list[list[float]],
+) -> tuple[list[float], float | None]:
+    """Return (sorted pairwise cosine similarities, mean pairwise Euclidean distance).
+
+    Numpy version of ``_cosine_similarity`` / ``_mean_pairwise_distance`` over
+    all pairs: same rounding and clamping, and pairs involving a zero-norm
+    vector are skipped for similarity exactly like the pure-Python helpers.
+    """
+    if len(vectors) < 2:
+        return [], None
+    import numpy as np
+
+    dimensions = min(len(vector) for vector in vectors)
+    matrix = np.asarray([vector[:dimensions] for vector in vectors], dtype=float)
+    left, right = np.triu_indices(len(matrix), k=1)
+
+    distance_sum = 0.0
+    for index in range(len(matrix) - 1):
+        distance_sum += float(np.sqrt(((matrix[index + 1:] - matrix[index]) ** 2).sum(axis=1)).sum())
+    dispersion = round(distance_sum / len(left), 6)
+
+    norms = np.sqrt((matrix * matrix).sum(axis=1))
+    nonzero = norms > 0
+    keep = nonzero[left] & nonzero[right]
+    safe_norms = np.where(nonzero, norms, 1.0)
+    cosine = (matrix @ matrix.T) / safe_norms[:, None] / safe_norms[None, :]
+    similarities = np.round(np.clip(cosine[left[keep], right[keep]], -1.0, 1.0), 6)
+    similarities.sort()
+    return similarities.tolist(), dispersion
+
+
 def _embedding_group_stats(records: list[dict[str, Any]]) -> dict[str, Any]:
     vectors = [vector for record in records if (vector := _embedding(record)) is not None]
-    similarities = [
-        similarity
-        for first, second in combinations(vectors, 2)
-        if (similarity := _cosine_similarity(first, second)) is not None
-    ]
-    similarities.sort()
+    similarities, dispersion = _pairwise_embedding_stats(vectors)
     median = (
         similarities[len(similarities) // 2]
         if similarities
@@ -199,7 +226,7 @@ def _embedding_group_stats(records: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "n_images": len(records),
         "n_embeddings": len(vectors),
-        "embedding_dispersion": _mean_pairwise_distance(vectors),
+        "embedding_dispersion": dispersion,
         "pairwise_similarity": {
             "n_pairs": len(similarities),
             "mean": round(sum(similarities) / len(similarities), 6) if similarities else None,
@@ -265,6 +292,14 @@ def diversity_metrics(
             for group, records in _group_records(data, group_by, config).items()
         }
     mode_labels = {_record_mode(record, config) for record in data}
+    # Reuse the per-mode statistics computed above instead of recomputing the
+    # O(n^2) embedding statistics for every threshold. A threshold is shown
+    # when at least one prompt-mode group is large enough to reach it.
+    mode_sizes = {mode: len(records) for mode, records in mode_records.items()}
+    mode_dispersion = {
+        mode: groups["prompt_mode"][mode]["embedding_dispersion"] or 0.0
+        for mode in mode_records
+    }
     return {
         "groups": groups,
         "rare_categories": {
@@ -284,17 +319,12 @@ def diversity_metrics(
             {
                 "sample_count": count,
                 "mean_embedding_dispersion": round(sum(
-                    _embedding_group_stats(records)["embedding_dispersion"] or 0.0
-                    for records in _group_records(data, "prompt_mode", config).values()
-                    if len(records) >= count
-                ) / max(1, sum(
-                    len(records) >= count
-                    for records in _group_records(data, "prompt_mode", config).values()
-                )), 6),
+                    mode_dispersion[mode]
+                    for mode, size in mode_sizes.items() if size >= count
+                ) / max(1, sum(size >= count for size in mode_sizes.values())), 6),
             }
-            for count in sorted({1, 2, 5, 10} & {
-                len(records) for records in _group_records(data, "prompt_mode", config).values()
-            })
+            for count in (1, 2, 5, 10)
+            if any(size >= count for size in mode_sizes.values())
         ],
         "available_prompt_modes": sorted(mode_labels),
     }
@@ -304,7 +334,14 @@ def collect_general_stats(
     data: list[dict[str, Any]],
     config: dict[str, Any],
 ) -> dict[str, Any]:
-    """Return every supported statistic in one JSON-serialisable dictionary."""
+    """Return every supported statistic in one JSON-serialisable dictionary.
+
+    Not used by the report pipeline (each chapter computes only what it needs,
+    see ``chapters.py``); kept for notebook and library use.
+    """
+    # Imported here: both modules import helpers from this one.
+    from .embedding_metrics import cluster_separability
+    from .prompt_adherence import prompt_adherence
 
     verbose = config.get('verbose', 0)
     attributes = config.get('prompt_variables', {}).keys() if isinstance(config.get('prompt_variables'), dict) else []
@@ -358,7 +395,6 @@ def demographic_composition(
 
 def invalid_images(data: list[dict[str, Any]]) -> dict[str, Any]:
     """Count images without a valid detected face and identify them."""
-    data = data
     invalid = [
         (index, record.get("name"))
         for index, record in enumerate(data)
@@ -372,7 +408,6 @@ def invalid_images(data: list[dict[str, Any]]) -> dict[str, Any]:
 
 def demographics(data: list[dict[str, Any]]) -> dict[str, Any]:
     """Return detected gender, race, age and emotion distributions."""
-    data = data
     result: dict[str, Any] = {}
     for attribute in MAIN_ATTRIBUTES:
         values = [
@@ -414,7 +449,3 @@ def diversity(data: list[dict[str, Any]], attributes: list[str]) -> dict[str, An
             })),
         }
     return result
-
-from .prompt_adherence import _value as _adherence_value
-from .prompt_adherence import prompt_adherence
-from .embedding_metrics import cluster_separability

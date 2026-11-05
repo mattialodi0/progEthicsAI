@@ -41,15 +41,15 @@ def build_report(
         artifact = analysis_artifact
     else:
         raise TypeError("analysis_artifact must be a path or dictionary")
-    if artifact.get("schema_version") != 1:
-        raise ValueError("Unsupported analysis artifact schema version")
+    if artifact.get("schema_version") != 2:
+        raise ValueError(
+            "Unsupported analysis artifact schema version "
+            f"{artifact.get('schema_version')!r}; rerun `python -m src.analysis.analyzer`"
+        )
     config = artifact.get("config")
-    analysis_results = artifact.get("analysis_results")
     report_data = artifact.get("report_data")
     if not isinstance(config, dict):
         raise ValueError("Analysis artifact config must be a dictionary")
-    if not isinstance(analysis_results, dict):
-        raise ValueError("Analysis artifact analysis_results must be a dictionary")
     if not isinstance(report_data, dict):
         raise ValueError("Analysis artifact report_data must be a dictionary")
 
@@ -63,32 +63,22 @@ def build_report(
     if not all(isinstance(report_data[chapter], dict) for chapter in required_chapters):
         raise ValueError("Each required report-data chapter must be a dictionary")
 
-    chapter_one = render_chapter_one(report_data["chapter_1"])
-    coverage = report_data["chapter_2"]
-    chapter_two = render_chapter_two(coverage)
-    chapter_three_data = report_data["chapter_3"]
-    chapter_three = render_chapter_three(chapter_three_data)
-    chapter_four = render_chapter_four(report_data["chapter_4"])
     bias_stats = report_data["chapter_5"]
-    chapter_five = (
+    chapters = [
+        render_chapter_one(report_data["chapter_1"]),
+        render_chapter_two(report_data["chapter_2"]),
+        render_chapter_three(report_data["chapter_3"]),
+        render_chapter_four(report_data["chapter_4"]),
         render_chapter_five(bias_stats)
         + render_stereotypical_associations(bias_stats)
-        + render_intersectional_analysis(bias_stats)
+        + render_intersectional_analysis(bias_stats),
+        render_chapter_six(report_data.get("chapter_6", {})),
+        render_chapter_seven(report_data["chapter_7"]),
+        render_chapter_eight(report_data.get("chapter_8", {})),
+    ]
+    chapters_html = "\n".join(
+        f'<div class="chapter">{chapter}</div>' for chapter in chapters
     )
-    chapter_six = render_chapter_six(report_data.get("chapter_6", {}))
-    chapter_seven = render_chapter_seven(report_data["chapter_7"])
-    chapter_eight = render_chapter_eight(report_data.get("chapter_8", {}))
-    report_data = {
-        "chapter_1": chapter_one.data,
-        "chapter_2": coverage,
-        "chapter_3": chapter_three_data,
-        "chapter_4": report_data["chapter_4"],
-        "chapter_5": bias_stats,
-        "chapter_6": report_data.get("chapter_6", {}),
-        "chapter_7": report_data["chapter_7"],
-        "chapter_8": report_data.get("chapter_8", {}),
-    }
-    serialized_data = json.dumps(report_data, ensure_ascii=True).replace("</", "<\\/")
 
     output_dir = Path(config.get("report_dir", "assets/report"))
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -115,7 +105,7 @@ def build_report(
     main {{ min-width: 0; }}
     .sidebar {{ align-self: start; position: sticky; top: 1rem; }}
     .sidebar nav {{ background: white; border: 1px solid #d9e2ec; border-radius: 8px;
-      box-shadow: 0 2px 5px #102a430d; padding: 1rem; overflow-y: scroll; max-height: 90vh; }}
+      box-shadow: 0 2px 5px #102a430d; padding: 1rem; overflow-y: auto; max-height: 90vh; }}
     .sidebar-title {{ color: #52606d; font-size: .8rem; font-weight: 700;
       letter-spacing: .08em; text-transform: uppercase; }}
     .sidebar a {{ border-left: 3px solid transparent; color: #334e68; display: block;
@@ -182,7 +172,7 @@ def build_report(
     .pie-layout {{ align-items: center; display: flex; flex-wrap: wrap; gap: 1.25rem; }}
     .pie-chart {{ border: 1px solid #d9e2ec; border-radius: 50%; flex: 0 0 190px;
       height: 190px; width: 190px; }}
-    #chapter-container {{ margin: 20px }}
+    .chapter {{ margin: 20px }}
   </style>
 </head>
 <body>
@@ -197,6 +187,7 @@ def build_report(
       <a class="subitem" href="#chapter-1-fairness" data-section-link="chapter-1-fairness">Fairness overview</a>
       <a class="subitem" href="#chapter-1-scope" data-section-link="chapter-1-scope">Scope and limitations</a>
       <a class="supitem" href="#chapter-2" data-section-link="chapter-2">2. Dataset and generation coverage</a>
+      <a class="subitem" href="#chapter-2-modes" data-section-link="chapter-2-modes">Prompt modes</a>
       <a class="subitem" href="#chapter-2-attributes" data-section-link="chapter-2-attributes">Prompt attributes</a>
       <a class="subitem" href="#chapter-2-prompts" data-section-link="chapter-2-prompts">Images per prompt</a>
       <a class="subitem" href="#chapter-2-detections" data-section-link="chapter-2-detections">Detection rates</a>
@@ -215,6 +206,7 @@ def build_report(
       <a class="subitem" href="#chapter-5-stereotypical" data-section-link="chapter-5-stereotypical">Stereotypical item associations</a>
       <a class="subitem" href="#chapter-5-intersectional" data-section-link="chapter-5-intersectional">Intersectional analysis</a>
       <a class="supitem" href="#chapter-6" data-section-link="chapter-6">6. Counterfactual analysis</a>
+      <a class="subitem" href="#chapter-6-overview" data-section-link="chapter-6-overview">Overview</a>
       <a class="subitem" href="#chapter-6-features" data-section-link="chapter-6-features">Feature counterfactuals</a>
       <a class="subitem" href="#chapter-6-embeddings" data-section-link="chapter-6-embeddings">Embedding counterfactuals</a>
       <a class="supitem" href="#chapter-7" data-section-link="chapter-7">7. Visual feature and embedding analysis</a>
@@ -223,28 +215,22 @@ def build_report(
       <a class="supitem" href="#chapter-8" data-section-link="chapter-8">8. Caption and semantic associations</a>
       <a class="subitem" href="#chapter-8-prompt" data-section-link="chapter-8-prompt">Prompt-word associations</a>
       <a class="subitem" href="#chapter-8-attributes" data-section-link="chapter-8-attributes">Word-attribute associations</a>
+      <a class="subitem" href="#chapter-8-vocabulary" data-section-link="chapter-8-vocabulary">Caption vocabulary</a>
     </nav>
   </aside>
   <main>
     <h1 id="report-title">Fairness report</h1>
     <p class="subtitle">Interactive audit report</p>
-    {chapter_one.html}
-    {chapter_two}
-    {chapter_three}
-    {chapter_four}
-    {chapter_five}
-    {chapter_six}
-    {chapter_seven}
-    {chapter_eight}
+    {chapters_html}
   </main>
 </div>
 <script>
-  const reportData = {serialized_data};
-  renderChapterThree();
-  const reportSections = document.querySelectorAll("[data-section-link]");
-  const sectionLinks = new Map(Array.from(reportSections).map((link) => [
-    link.dataset.sectionLink, link
-  ]));
+  // Highlight the sidebar entry of the section currently in view. Only
+  // elements that have a sidebar link are observed, so plot containers whose
+  // ids also start with "chapter-" cannot clear the highlight.
+  const sectionLinks = new Map(Array.from(
+    document.querySelectorAll("[data-section-link]")
+  ).map((link) => [link.dataset.sectionLink, link]));
   const sectionObserver = new IntersectionObserver((entries) => {{
     entries.forEach((entry) => {{
       if (entry.isIntersecting) {{
@@ -253,8 +239,9 @@ def build_report(
       }}
     }});
   }}, {{ rootMargin: "-15% 0px -70% 0px" }});
-  document.querySelectorAll("[id^='chapter-'], #report-title").forEach((section) => {{
-    sectionObserver.observe(section);
+  sectionLinks.forEach((link, id) => {{
+    const section = document.getElementById(id);
+    if (section) sectionObserver.observe(section);
   }});
 </script>
 </body>

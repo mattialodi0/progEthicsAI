@@ -10,11 +10,12 @@ from typing import Any
 
 from .general_statistics import (
     MAIN_ATTRIBUTES,
-    _adherence_value,
     _canonical_demographic_value,
     _detected_value,
     _embedding,
 )
+from .prompt_adherence import _label as _adherence_label
+from .prompt_adherence import _value as _adherence_value
 
 
 COUNTERFACTUAL_ATTRIBUTES = ("gender", "race", "age", "emotion", "job", "workplace")
@@ -110,9 +111,7 @@ def _adherence(record: dict[str, Any], attribute: str) -> bool | None:
     detected = _adherence_value(record, attribute, requested)
     if detected is None:
         return False
-    requested_label = _canonical_demographic_value(attribute, requested)
-    detected_label = _canonical_demographic_value(attribute, detected)
-    return requested_label == detected_label
+    return _adherence_label(attribute, requested) == _adherence_label(attribute, detected)
 
 
 def _distance(first: list[float], second: list[float]) -> float:
@@ -258,18 +257,32 @@ def _matched_attribute_pairs(
     return pairs
 
 
-def _control_pairs(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _mode_key(config: dict[str, Any] | None, label: str, default: str) -> str:
+    """Return the raw ``mode`` value whose configured label is ``label``."""
+    modes = (config or {}).get("prompt_modes")
+    if isinstance(modes, dict):
+        for key, value in modes.items():
+            if str(value).strip().lower() == label:
+                return str(key)
+    return default
+
+
+def _control_pairs(
+    data: list[dict[str, Any]], mode: str = "0"
+) -> list[dict[str, Any]]:
     """Return matched pairs from four-attribute control prompts."""
     return _matched_attribute_pairs(
-        data, mode="0", required_attributes=CONTROL_ATTRIBUTES
+        data, mode=mode, required_attributes=CONTROL_ATTRIBUTES
     )
 
 
-def _double_pairs(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _double_pairs(
+    data: list[dict[str, Any]], mode: str = "2"
+) -> list[dict[str, Any]]:
     """Return matched pairs from prompts specifying exactly two attributes."""
     pairs: list[dict[str, Any]] = []
     for index, record in enumerate(data):
-        if str(record.get("mode")) != "2":
+        if str(record.get("mode")) != mode:
             continue
         features = record.get("prompt_feats")
         if not isinstance(features, dict):
@@ -283,11 +296,13 @@ def _double_pairs(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
         pairs.append((index, record, specified))
 
     result: list[dict[str, Any]] = []
-    pair_specs = {
+    # Sorted: iterating a set of strings would make the pair order depend on
+    # the per-process hash seed, so every run produced a different artifact.
+    pair_specs = sorted({
         spec
         for _, _, specified in pairs
         for spec in ((specified[0], specified[1]), (specified[1], specified[0]))
-    }
+    })
     for variable, fixed in pair_specs:
         groups: defaultdict[str, defaultdict[str, list[dict[str, Any]]]] = defaultdict(
             lambda: defaultdict(list)
@@ -320,8 +335,12 @@ def _double_pairs(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 
-def build_counterfactual_analysis(data: list[dict[str, Any]]) -> dict[str, Any]:
+def build_counterfactual_analysis(
+    data: list[dict[str, Any]], config: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Build all chapter-6 data without retaining raw records or embeddings."""
+    control_mode = _mode_key(config, "control", "0")
+    double_mode = _mode_key(config, "double variable", "2")
     results = {
         attribute: _attribute_analysis(data, attribute)
         for attribute in COUNTERFACTUAL_ATTRIBUTES
@@ -333,12 +352,12 @@ def build_counterfactual_analysis(data: list[dict[str, Any]]) -> dict[str, Any]:
         "control_analysis": {
             "control_attributes": list(CONTROL_ATTRIBUTES),
             "detected_attributes": list(DETECTED_ATTRIBUTES),
-            "pairs": _control_pairs(data),
+            "pairs": _control_pairs(data, control_mode),
         },
         "double_analysis": {
             "control_attributes": list(CONTROL_ATTRIBUTES),
             "detected_attributes": list(DETECTED_ATTRIBUTES),
-            "pairs": _double_pairs(data),
+            "pairs": _double_pairs(data, double_mode),
         },
         "caveat": (
             "Embedding distance is not itself a bias score: the requested "

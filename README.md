@@ -23,9 +23,18 @@ not reload the dataset or repeat expensive analysis.
 From the repository root:
 
 ```powershell
-python -m src.analysis.analyzer
+python -m src.analysis.analyzer                  # build the data for every chapter
+python -m src.analysis.analyzer --chapters 3 7   # rebuild only chapters 3 and 7
+python -m src.analysis.analyzer --list           # when each chapter was last built
 python -m src.report.report_builder assets/analysis.json --no-wait
 ```
+
+Each report chapter has its own data builder (`src/analysis/chapters.py`), so
+after the first full run you can rebuild just the chapters you are working on.
+The others are kept from the existing artifact. A chapter missing from the
+artifact is always built. If you change the config or the dataset, the
+analyzer warns about kept chapters that were built from a different one.
+`--config`, `--data` and `--output` override the default `assets/` paths.
 
 For library or notebook use:
 
@@ -33,7 +42,8 @@ For library or notebook use:
 from src.analysis.analyzer import save_analysis
 from src.report.report_builder import build_report
 
-artifact_path = save_analysis(data, config, "assets/analysis.json")
+artifact_path = save_analysis(data, config, "assets/analysis.json")                   # all chapters
+artifact_path = save_analysis(data, config, "assets/analysis.json", chapters=[5, 6])  # partial update
 report_path = build_report(artifact_path, open_report=True, wait_for_close=True)
 ```
 
@@ -68,3 +78,6 @@ Biases we are interested in reporting:
 8. Caption and semantic association analysis - What image descriptions reveal about recurring attributes, objects, and contexts.
 9. Cross-analysis and key findings - Combine evidence from multiple measurements to identify robust patterns.
 0. Methodology, limitations, and appendix - Definitions, uncertainty, robustness checks, and reproducibility.
+
+
+

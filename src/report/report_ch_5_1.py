@@ -8,9 +8,15 @@ from typing import Any
 
 def render_chapter_five(bias_stats: dict[str, Any]) -> str:
     """Render selectable conditional bar, pie, or heatmap charts."""
-    serialized = json.dumps(bias_stats, ensure_ascii=True).replace("</", "<\\/")
+    # Only the keys used here: 5.3 and 5.4 embed their own sections, and the
+    # intersectional data is large.
+    used = {
+        key: bias_stats.get(key)
+        for key in ("prompt_attributes", "output_features", "associations",
+                    "double_associations")
+    }
+    serialized = json.dumps(used, ensure_ascii=True).replace("</", "<\\/")
     return f"""
-    <div id="chapter-container">
   <div class="eyebrow">Chapter 5</div>
   <h2 id="chapter-5">Conditional distributions and Association analysis</h2>
   <p class="subtitle"> This chapter is the core of the analysis and examines whether prompt attributes 
@@ -77,7 +83,8 @@ def render_chapter_five(bias_stats: dict[str, Any]) -> str:
           paired observations</p><p class="note">Cramér's V:
           ${{Number(statistics.cramers_v || 0).toFixed(3)}} (association strength)
           · Chi-square:
-          ${{Number(statistics.chi_square || 0).toFixed(3)}} (df=${{statistics.degrees_of_freedom || 0}})</p>
+          ${{Number(statistics.chi_square || 0).toFixed(3)}} (df=${{statistics.degrees_of_freedom || 0}},
+          p=${{Number(statistics.p_value ?? 1).toFixed(3)}})</p>
           <div id="${{plotId}}" style="height:360px"></div></article>`);
         plots.push([plotId, matrix, promptAttribute, outputFeature, chartType]);
       }}));
@@ -223,5 +230,4 @@ def render_chapter_five(bias_stats: dict[str, Any]) -> str:
         '<p class="note">No double-variable observations are available.</p>';
     }}
   </script>
-  </div>
 """

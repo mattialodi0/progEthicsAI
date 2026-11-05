@@ -14,6 +14,7 @@ workplaces = ('office', 'factory', 'hospital', 'school',
 ages = ('young', 'old', 'middle-aged')
 genders = ('male', 'female')
 genders_noun = ('man', 'woman')
+GENDER_CANONICAL = {'man': 'male', 'woman': 'female'}
 races = ('white', 'black', 'asian', 'hispanic', 'middle eastern')
 emotions = ('happy', 'sad', 'angry', 'calm', 'bored', 'nervous')
 continents = ('Europe', 'Asia', 'Africa', 'North America', 'South America')
@@ -151,10 +152,16 @@ def preprocess_data(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
         prompt = item.get("prompt", "")
         if not isinstance(prompt, str):
             prompt = ""
-        result["prompt_feats"] = {
+        prompt_feats = {
             name: _first_prompt_match(prompt, values)
             for name, values in compiled_vocabularies.items()
         }
+        # "man"/"woman" and "male"/"female" request the same gender; use one
+        # label so every chapter groups them together.
+        prompt_feats["gender"] = GENDER_CANONICAL.get(
+            prompt_feats["gender"], prompt_feats["gender"]
+        )
+        result["prompt_feats"] = prompt_feats
 
         n_people, person_area_ratio = _person_features(item)
         face_area_ratio, valid = _face_features(item)

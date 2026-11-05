@@ -1,136 +1,240 @@
+"""Compute the report data and persist it as a versioned JSON artifact.
+
+The artifact holds one ``report_data["chapter_N"]`` payload per report
+chapter, plus per-chapter build metadata. The first run (or any run without a
+chapter selection) builds every chapter. Later runs can rebuild only some
+chapters and keep the rest from the existing artifact:
+
+    python -m src.analysis.analyzer                  # build everything
+    python -m src.analysis.analyzer --chapters 3 7   # rebuild chapters 3 and 7
+"""
+
 from __future__ import annotations
 
+import argparse
 import gzip
+import hashlib
 import json
-from datetime import datetime
+import os
+import time
+import warnings
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
+from .chapters import CHAPTER_BUILDERS, CHAPTER_TITLES, normalize_chapter
 from .preprocessing import preprocess
-from .prompt_statistics import collect_prompt_stats
-from .general_statistics import collect_general_stats
-from .bias_statistics import collect_bias_stats
-from ..report.report_ch_2 import build_coverage
-from ..report.report_ch_3 import build_demographic_diversity
-from ..report.report_ch_7 import build_visual_feature_analysis
-from .other_statistics import build_caption_analysis
-from .counterfactual_statistics import build_counterfactual_analysis
+
+SCHEMA_VERSION = 2
+# Config keys that only control how the analysis runs, not what it computes.
+RUNTIME_CONFIG_KEYS = frozenset({"verbose"})
 
 
-def analyze(data: list[dict[str, Any]], config: dict[str, Any]) -> dict[str, Any]:
-    """
-    Compute all data required by the report and return a JSON-serializable artifact.
+def _stored_config(config: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in config.items() if key not in RUNTIME_CONFIG_KEYS}
+
+
+def _fingerprint(value: Any) -> str:
+    encoded = json.dumps(value, sort_keys=True, ensure_ascii=True, default=str)
+    return hashlib.sha256(encoded.encode("ascii")).hexdigest()[:16]
+
+
+def _data_fingerprint(data: list[dict[str, Any]]) -> str:
+    """Cheap identity of the dataset: which images, prompts and modes it holds."""
+    return _fingerprint([
+        (record.get("name"), record.get("prompt"), record.get("mode"))
+        for record in data if isinstance(record, dict)
+    ])
+
+
+def _select_chapters(chapters: Iterable[str | int] | None) -> list[str]:
+    if chapters is None:
+        return list(CHAPTER_BUILDERS)
+    selected = {normalize_chapter(chapter) for chapter in chapters}
+    return [chapter for chapter in CHAPTER_BUILDERS if chapter in selected]
+
+
+def _usable_previous(previous: dict[str, Any] | None) -> dict[str, Any] | None:
+    if previous is None:
+        return None
+    if previous.get("schema_version") != SCHEMA_VERSION:
+        warnings.warn(
+            f"Existing artifact has schema version {previous.get('schema_version')!r}, "
+            f"expected {SCHEMA_VERSION}; rebuilding every chapter.",
+            stacklevel=3,
+        )
+        return None
+    if not isinstance(previous.get("report_data"), dict):
+        return None
+    return previous
+
+
+def analyze(
+    data: list[dict[str, Any]],
+    config: dict[str, Any],
+    chapters: Iterable[str | int] | None = None,
+    previous: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compute report data and return a JSON-serializable artifact.
 
     Args:
-        data: The data to analyze.
-        config: The configuration for the analysis.
+        data: Raw image metadata records.
+        config: Analysis configuration. ``verbose`` controls progress output
+            and is not stored in the artifact.
+        chapters: Chapters to (re)build, e.g. ``[3, "chapter_5"]``. ``None``
+            builds every chapter.
+        previous: An existing artifact to update. Chapters that are not
+            selected are copied from it; chapters it lacks are always built.
+            Without a usable previous artifact every chapter is built.
     """
-    verbose = config.get('verbose', 0)
+    verbose = int(config.get("verbose", 0) or 0)
+    stored_config = _stored_config(config)
+    previous = _usable_previous(previous)
+    previous_data = previous["report_data"] if previous else {}
+    previous_meta = previous.get("chapters", {}) if previous else {}
+
+    selected = _select_chapters(chapters)
+    to_build = [
+        chapter for chapter in CHAPTER_BUILDERS
+        if chapter in selected or chapter not in previous_data
+    ]
     if verbose > 0:
-        print("Running fairness analysis...")
-    
-    # Preprocess the data
+        print(f"Building {len(to_build)}/{len(CHAPTER_BUILDERS)} chapters: "
+              + ", ".join(to_build))
+
+    start = time.perf_counter()
     preprocessed_data = preprocess(data)
+    if verbose > 1:
+        print(f"  preprocessing: {time.perf_counter() - start:.1f}s")
 
-    # Collect prompt statistics
-    prompt_stats = collect_prompt_stats(preprocessed_data, config=config)
+    config_fingerprint = _fingerprint(stored_config)
+    data_fingerprint = _data_fingerprint(data)
+    report_data: dict[str, Any] = {}
+    chapter_meta: dict[str, Any] = {}
+    for chapter in CHAPTER_BUILDERS:
+        if chapter not in to_build:
+            report_data[chapter] = previous_data[chapter]
+            chapter_meta[chapter] = previous_meta.get(chapter, {})
+            continue
+        start = time.perf_counter()
+        report_data[chapter] = CHAPTER_BUILDERS[chapter](preprocessed_data, config)
+        duration = time.perf_counter() - start
+        chapter_meta[chapter] = {
+            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "duration_seconds": round(duration, 2),
+            "config_fingerprint": config_fingerprint,
+            "data_fingerprint": data_fingerprint,
+        }
+        if verbose > 0:
+            print(f"  {chapter} ({CHAPTER_TITLES[chapter]}): {duration:.1f}s")
 
-    # Collect general statistics
-    general_stats = collect_general_stats(preprocessed_data, config=config)
-    bias_stats = collect_bias_stats(preprocessed_data, config=config)
+    stale = [
+        chapter for chapter, meta in chapter_meta.items()
+        if chapter not in to_build and (
+            meta.get("config_fingerprint") != config_fingerprint
+            or meta.get("data_fingerprint") != data_fingerprint
+        )
+    ]
+    if stale:
+        warnings.warn(
+            "These chapters were kept from the previous artifact but were built "
+            "from a different config or dataset: " + ", ".join(stale)
+            + ". Rebuild them, or run without --chapters to rebuild everything.",
+            stacklevel=2,
+        )
 
-
-    analysis_results = {
-        'prompt_stats': prompt_stats,
-        'general_stats': general_stats,
-        'bias_stats': bias_stats
-    }
-
-    # These are report-specific data transformations, but are computed here so
-    # rendering never needs the original metadata.
-    report_data = {
-        "chapter_1": _build_summary(preprocessed_data, analysis_results, config),
-        "chapter_2": build_coverage(preprocessed_data, config),
-        "chapter_3": build_demographic_diversity(analysis_results, config),
-        "chapter_4": general_stats.get("prompt_adherence", {}),
-        "chapter_5": bias_stats,
-        "chapter_6": build_counterfactual_analysis(preprocessed_data),
-        "chapter_7": build_visual_feature_analysis(preprocessed_data, config),
-        "chapter_8": build_caption_analysis(preprocessed_data, config),
-    }
-    artifact = {
-        "schema_version": 1,
-        "config": config,
-        "analysis_results": analysis_results,
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "config": stored_config,
+        "chapters": chapter_meta,
         "report_data": report_data,
     }
-    # Fail at analysis time rather than producing an artifact that the report
-    # builder cannot load later.
-    json.dumps(artifact, ensure_ascii=True)
-    return artifact
 
 
-def _build_summary(
-    data: list[dict[str, Any]],
-    analysis_results: dict[str, Any],
-    config: dict[str, Any],
-) -> dict[str, Any]:
-    prompt_stats = analysis_results.get("prompt_stats", {})
-    general_stats = analysis_results.get("general_stats", {})
-    invalid_images = general_stats.get("invalid_images", {})
-    generated_images = prompt_stats.get("num_images", len(data))
-    failed_features = invalid_images.get("count", 0)
-    if not isinstance(generated_images, int) or generated_images < 0:
-        raise ValueError("prompt_stats.num_images must be a non-negative integer")
-    if not isinstance(failed_features, int) or failed_features < 0:
-        raise ValueError("general_stats.invalid_images.count must be a non-negative integer")
-    settings = config.get("generation_settings", config.get("generation", {}))
-    return {
-        "model_name": next(
-            (config[key] for key in ("model_name", "model", "T2I_model")
-             if config.get(key) not in (None, "")),
-            "Not specified",
-        ),
-        "model_version": next(
-            (config[key] for key in ("model_version", "version")
-             if config.get(key) not in (None, "")),
-            "Not specified",
-        ),
-        "generation_settings": settings if isinstance(settings, dict) else {},
-        "audit_date": config.get(
-            "audit_date", datetime.now().astimezone().date().isoformat()
-        ),
-        "num_prompts": prompt_stats.get("num_unique_prompts", 0),
-        "generated_images": generated_images,
-        "valid_images": max(0, generated_images - failed_features),
-        "failed_feature_detections": failed_features,
-    }
+def load_analysis(path: str | Path) -> dict[str, Any]:
+    return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
 def save_analysis(
     data: list[dict[str, Any]],
     config: dict[str, Any],
     output_path: str | Path,
+    chapters: Iterable[str | int] | None = None,
 ) -> Path:
-    """Compute the analysis once and persist it for a later report build."""
+    """Compute the analysis and persist it for a later report build.
+
+    With ``chapters=None`` every chapter is built. With a chapter selection the
+    existing artifact at ``output_path`` is updated in place: only the selected
+    chapters (and any it is missing) are rebuilt. If no compatible artifact
+    exists yet, every chapter is built.
+    """
     path = Path(output_path)
+    previous = None
+    if chapters is not None:
+        if path.exists():
+            previous = load_analysis(path)
+        elif int(config.get("verbose", 0) or 0) > 0:
+            print(f"No artifact at {path}; building every chapter.")
+    artifact = analyze(data, config, chapters=chapters, previous=previous)
+
+    # Serialize fully before touching the file, and replace it atomically, so a
+    # failure never leaves a truncated or half-updated artifact behind.
+    text = json.dumps(artifact, ensure_ascii=True, separators=(",", ":"))
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(analyze(data, config), ensure_ascii=True, indent=2),
-        encoding="utf-8",
-    )
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(text, encoding="utf-8")
+    os.replace(temporary, path)
     return path
 
 
-if __name__ == "__main__":
+def load_metadata(path: str | Path) -> list[dict[str, Any]]:
+    path = Path(path)
+    opener = gzip.open if path.suffix == ".gz" else open
+    with opener(path, "rt", encoding="utf-8") as file:
+        return json.load(file)
 
-    config_path = './assets/config.json'
-    with open(config_path, 'r') as f:
-        config = json.load(f)
-    
-    metadata_json_path = './assets/all_metadata.json.gz'
-    with gzip.open(metadata_json_path, 'rt', encoding='utf-8') as f:
-        data = json.load(f)
-    
-    config["verbose"] = 2
-    save_analysis(data, config, "./assets/analysis.json")
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        description="Compute the fairness-report data artifact.",
+    )
+    parser.add_argument(
+        "--chapters", "-c", nargs="+", metavar="N",
+        help="Rebuild only these chapters (e.g. 3 5 7) and keep the others "
+             "from the existing artifact. Default: rebuild every chapter.",
+    )
+    parser.add_argument("--config", default="assets/config.json")
+    parser.add_argument("--data", default="assets/all_metadata.json.gz")
+    parser.add_argument("--output", default="assets/analysis.json")
+    parser.add_argument("--verbose", "-v", type=int, default=2)
+    parser.add_argument("--list", action="store_true",
+                        help="List chapters and when they were last built, then exit.")
+    args = parser.parse_args(argv)
+
+    if args.list:
+        meta = load_analysis(args.output).get("chapters", {}) if Path(args.output).exists() else {}
+        for chapter, title in CHAPTER_TITLES.items():
+            info = meta.get(chapter, {})
+            built = info.get("generated_at", "never")
+            took = f" ({info['duration_seconds']}s)" if "duration_seconds" in info else ""
+            print(f"{chapter.split('_')[1]:>2}  {title:<45} {built}{took}")
+        return
+
+    chapters = args.chapters
+    if chapters is not None:
+        # Validate before loading the (large) dataset.
+        try:
+            chapters = _select_chapters(chapters)
+        except ValueError as error:
+            parser.error(str(error))
+
+    config = json.loads(Path(args.config).read_text(encoding="utf-8"))
+    config["verbose"] = args.verbose
+    data = load_metadata(args.data)
+    start = time.perf_counter()
+    path = save_analysis(data, config, args.output, chapters=chapters)
+    print(f"Wrote {path} in {time.perf_counter() - start:.1f}s")
+
+
+if __name__ == "__main__":
+    main()

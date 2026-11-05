@@ -22,9 +22,17 @@ def _value(record: dict[str, Any], attribute: str, requested: Any) -> str | None
             else _detected_prompt_value(record, requested))
 
 
+LABEL_ALIASES = {
+    "gender": {"man": "male", "woman": "female"},
+    # DeepFace reports "latino hispanic" for the prompted "hispanic".
+    "race": {"latino hispanic": "hispanic"},
+}
+
+
 def _label(attribute: str, value: Any) -> str:
+    """Comparable label: prompt words and detector labels on one vocabulary."""
     label = str(value).strip().lower()
-    return {"man": "male", "woman": "female"}.get(label, label) if attribute == "gender" else label
+    return LABEL_ALIASES.get(attribute, {}).get(label, label)
 
 
 def _measurement(records: list[dict[str, Any]], attribute: str) -> dict[str, Any]:
@@ -44,10 +52,7 @@ def _measurement(records: list[dict[str, Any]], attribute: str) -> dict[str, Any
         detected_label = _label(attribute, detected)
         matrix[requested_label][detected_label] += 1
         total += 1
-        correct += int(requested_label == detected_label or (
-            attribute == "race" and requested_label == "hispanic"
-            and detected_label == "latino hispanic"
-        ))
+        correct += int(requested_label == detected_label)
     labels = sorted(set(matrix) | {item for row in matrix.values() for item in row})
     counts = {row: {column: matrix[row].get(column, 0) for column in labels} for row in labels}
     return {

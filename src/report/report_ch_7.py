@@ -1,222 +1,18 @@
-"""Data preparation and renderer for chapter 7: image and embedding analysis."""
+"""Renderer for chapter 7: image and embedding analysis.
+
+The data is built by ``src.analysis.visual_features.build_visual_feature_analysis``.
+"""
 
 from __future__ import annotations
 
 import json
-from itertools import combinations
 from typing import Any
-
-from ..analysis.general_statistics import _distance, _embedding, _record_mode
-
-IMAGE_FEATURES = (
-    "brightness", "saturation", "contrast", "n_people",
-    "person_area_ratio", "face_area_ratio",
-)
-MAX_DISTANCE_POINTS = 600
-
-
-def _number(value: Any) -> float | None:
-    try:
-        result = float(value)
-    except (TypeError, ValueError):
-        return None
-    return result if result == result and abs(result) != float("inf") else None
-
-
-def _feature_value(record: dict[str, Any], feature: str) -> float | None:
-    if feature in {"brightness", "saturation", "contrast"}:
-        metrics = record.get("image_metrics")
-        return _number(metrics.get(feature) if isinstance(metrics, dict) else None)
-    return _number(record.get(feature))
-
-
-def _group_value(record: dict[str, Any], group_by: str, config: dict[str, Any]) -> str | None:
-    if group_by == "prompt_mode":
-        return _record_mode(record, config)
-    features = record.get("prompt_feats")
-    value = features.get(group_by) if isinstance(features, dict) else None
-    return str(value).strip().lower() if value is not None and str(value).strip() else None
-
-
-def _pca(vectors: list[list[float]]) -> list[list[float]] | None:
-    if len(vectors) < 2:
-        return None
-    dimensions = min(len(vector) for vector in vectors)
-    if not dimensions:
-        return None
-    try:
-        import numpy as np
-    except ImportError:
-        return None
-    try:
-        matrix = np.asarray([vector[:dimensions] for vector in vectors], dtype=float)
-        matrix -= matrix.mean(axis=0)
-        _, _, components = np.linalg.svd(matrix, full_matrices=False)
-        projection = matrix @ components[:2].T
-    except (np.linalg.LinAlgError, ValueError):
-        return None
-    if projection.shape[1] == 1:
-        projection = np.column_stack((projection[:, 0], np.zeros(len(vectors))))
-    return [[round(float(x), 6), round(float(y), 6)] for x, y in projection]
-
-
-def _umap(vectors: list[list[float]]) -> list[list[float]] | None:
-    if len(vectors) < 3:
-        return None
-    try:
-        import umap
-        dimensions = min(len(vector) for vector in vectors)
-        projection = umap.UMAP(
-            n_components=2, n_neighbors=max(2, min(15, len(vectors) - 1)),
-            random_state=42,
-        ).fit_transform([vector[:dimensions] for vector in vectors])
-    except (ImportError, ValueError):
-        return None
-    return [[round(float(x), 6), round(float(y), 6)] for x, y in projection]
-
-
-def _distance_distributions(
-    vectors: list[list[float]], labels: list[str | None], max_points: int = MAX_DISTANCE_POINTS
-) -> dict[str, Any]:
-    if len(vectors) > max_points:
-        indices = [int(index * len(vectors) / max_points) for index in range(max_points)]
-        vectors = [vectors[index] for index in indices]
-        labels = [labels[index] for index in indices]
-    within: list[float] = []
-    between: list[float] = []
-    for left, right in combinations(range(len(vectors)), 2):
-        value = round(_distance(vectors[left], vectors[right]), 6)
-        (within if labels[left] == labels[right] else between).append(value)
-    return {"within": within, "between": between}
-
-
-def _silhouette(vectors: list[list[float]], labels: list[str | None]) -> float | None:
-    """Return a deterministic, bounded-cost silhouette estimate."""
-    if len(vectors) > MAX_DISTANCE_POINTS:
-        indices = [int(index * len(vectors) / MAX_DISTANCE_POINTS)
-                   for index in range(MAX_DISTANCE_POINTS)]
-        vectors = [vectors[index] for index in indices]
-        labels = [labels[index] for index in indices]
-    groups = sorted({label for label in labels if label is not None})
-    if len(groups) < 2:
-        return None
-    group_indices = {
-        group: [index for index, item_label in enumerate(labels) if item_label == group]
-        for group in groups
-    }
-    scores: list[float] = []
-    for index, label in enumerate(labels):
-        if label is None:
-            continue
-        own = [
-            _distance(vectors[index], vectors[j])
-            for j in group_indices[label] if j != index
-        ]
-        means = [
-            sum(_distance(vectors[index], vectors[j]) for j in group_indices[group])
-            / len(group_indices[group])
-            for group in groups if group != label
-        ]
-        if means:
-            a = sum(own) / len(own) if own else 0.0
-            b = min(means)
-            scores.append((b - a) / max(a, b) if max(a, b) else 0.0)
-    return round(sum(scores) / len(scores), 6) if scores else None
-
-
-def build_visual_feature_analysis(
-    data: list[dict[str, Any]], config: dict[str, Any]
-) -> dict[str, Any]:
-    """Build JSON-safe data for all chapter-7 plots."""
-    prompt_feature_values: dict[str, set[str]] = {}
-    modes: set[str] = set()
-    for record in data:
-        modes.add(_record_mode(record, config))
-        prompt_feats = record.get("prompt_feats")
-        if not isinstance(prompt_feats, dict):
-            continue
-        for key, value in prompt_feats.items():
-            if value is not None and str(value).strip():
-                prompt_feature_values.setdefault(key, set()).add(str(value).strip().lower())
-    attributes = sorted(prompt_feature_values)
-    groupings = ["prompt_mode", *attributes]
-    groups_by_grouping = {
-        "prompt_mode": sorted(modes),
-        **{attribute: sorted(values) for attribute, values in prompt_feature_values.items()},
-    }
-    record_groups = [
-        {
-            grouping: _group_value(record, grouping, config)
-            for grouping in groupings
-        }
-        for record in data
-    ]
-    feature_values = {
-        feature: [_feature_value(record, feature) for record in data]
-        for feature in IMAGE_FEATURES
-    }
-    features: dict[str, Any] = {}
-    for feature in IMAGE_FEATURES:
-        features[feature] = {
-            "values": [value for value in feature_values[feature] if value is not None],
-            "by_group": {
-                grouping: {
-                    group: [
-                        value for value, record_group in zip(
-                            feature_values[feature], record_groups
-                        )
-                        if record_group[grouping] == group and value is not None
-                    ]
-                    for group in groups_by_grouping[grouping]
-                }
-                for grouping in groupings
-            },
-        }
-
-    records = [
-        (record, vector) for record in data
-        if (vector := _embedding(record)) is not None
-    ]
-    vectors = [vector for _, vector in records]
-    pca = _pca(vectors)
-    umap = _umap(vectors)
-    points = [{
-        "pca": pca[index] if pca else None,
-        "umap": umap[index] if umap else None,
-        "groups": {
-            grouping: _group_value(record, grouping, config)
-            for grouping in groupings
-        },
-    } for index, (record, _) in enumerate(records)]
-    embedding_groups = {}
-    for grouping in groupings:
-        labels = [_group_value(record, grouping, config) for record, _ in records]
-        distances = _distance_distributions(vectors, labels)
-        embedding_groups[grouping] = {
-            "separability": {
-                "score": _silhouette(vectors, labels),
-                "n_images": len(vectors),
-                "n_clusters": len({label for label in labels if label is not None}),
-            },
-            "distances": distances,
-        }
-    return {
-        "image_features": features,
-        "embedding": {
-            "n_embeddings": len(vectors),
-            "group_by": groupings,
-            "points": points,
-            "projections": {"pca_available": pca is not None, "umap_available": umap is not None},
-            "groups": embedding_groups,
-        },
-    }
 
 
 def render_chapter_seven(chapter_data: dict[str, Any]) -> str:
     """Render interactive feature and embedding plots."""
     serialized = json.dumps(chapter_data, ensure_ascii=True).replace("</", "<\\/")
     return f"""
-    <div id="chapter-container">
   <div class="eyebrow">Chapter 7</div>
   <h2 id="chapter-7">Visual feature and embedding analysis</h2>
   <p class="subtitle">Measurable image properties and semantic representation are
@@ -250,6 +46,11 @@ def render_chapter_seven(chapter_data: dict[str, Any]) -> str:
       String(value).replaceAll("_", " ");
     const chapterSevenState = {{feature: "brightness", grouping: "prompt_mode", projection: "pca"}};
     function renderChapterSeven() {{
+      // Both subgroup selectors drive the same grouping; keep them in sync.
+      ["chapter-7-group", "chapter-7-embedding-group"].forEach((id) => {{
+        const select = document.getElementById(id);
+        if (select) select.value = chapterSevenState.grouping;
+      }});
       const feature = chapterSevenData.image_features[chapterSevenState.feature];
       const groups = feature.by_group[chapterSevenState.grouping] || {{}};
       Plotly.newPlot("chapter-7-feature-plot", [{{type: "histogram", x: feature.values,
@@ -340,5 +141,4 @@ def render_chapter_seven(chapter_data: dict[str, Any]) -> str:
     }};
     renderChapterSeven();
   </script>
-  </div>
 """

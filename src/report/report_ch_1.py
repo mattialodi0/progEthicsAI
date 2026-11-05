@@ -2,16 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import html
 import json
 from typing import Any
-
-
-@dataclass(frozen=True)
-class RenderedChapter:
-    html: str
-    data: dict[str, Any]
 
 
 def _metric_card(label: str, value: Any) -> str:
@@ -23,9 +16,7 @@ def _metric_card(label: str, value: Any) -> str:
     )
 
 
-def render_chapter_one(
-    summary: dict[str, Any],
-) -> RenderedChapter:
+def render_chapter_one(summary: dict[str, Any]) -> str:
     """Render the executive summary chapter."""
     settings_json = json.dumps(summary["generation_settings"], indent=2, ensure_ascii=True)
     content = f"""
@@ -44,9 +35,12 @@ def render_chapter_one(
   <div class="metrics">
     {_metric_card("Prompts", summary["num_prompts"])}
     {_metric_card("Generated images", summary["generated_images"])}
-    {_metric_card("Valid images", summary["valid_images"])}
-    {_metric_card("Failed feature detections", summary["failed_feature_detections"])}
+    {_metric_card("Images with a detected face", summary["valid_images"])}
+    {_metric_card("Images without a detected face", summary["failed_feature_detections"])}
   </div>
+  <p class="note">Face-based features (gender, race, age, emotion) are only
+  available for images with a detected face; per-feature detection rates are
+  in chapter 2.</p>
   <section id="chapter-1-fairness" aria-labelledby="fairness-heading">
     <h3 id="fairness-heading">Fairness overview</h3>
     <p class="placeholder">Fairness findings will be added in a later chapter.</p>
@@ -61,4 +55,4 @@ def render_chapter_one(
     populations, models, or settings.</p>
   </section>
 """
-    return RenderedChapter(content, summary)
+    return content

@@ -123,20 +123,34 @@ def _transition_selector(
                   Array.from({prefix}Fixed.querySelectorAll("select")).map((select) =>
                     [select.dataset.attribute, select.value]))'''
                 )};
-                const matching = () => {prefix}Pairs.filter((pair) => {{
-                  if (pair.variable_attribute !== variable) return false;
-                  if ((pair.variable_values || [])[0] !== {prefix}Start.value ||
-                      (pair.variable_values || [])[1] !== {prefix}End.value) return false;
+                // Pairs are stored with their two values in sorted order; accept
+                // either order and orient each pair as before -> after.
+                const matching = () => {prefix}Pairs.flatMap((pair) => {{
+                  if (pair.variable_attribute !== variable) return [];
                   const chosen = selected();
-                  return {(
+                  const fixedMatches = {(
                       "pair.fixed_attribute === chosen.attribute && pair.fixed_value === chosen.value"
                       if double else
                       "Object.entries(chosen).every(([attribute, value]) => " +
                       "pair.fixed_values && pair.fixed_values[attribute] === value)"
                   )};
+                  if (!fixedMatches) return [];
+                  const [left, right] = pair.variable_values || [];
+                  if (left === {prefix}Start.value && right === {prefix}End.value) return [pair];
+                  if (left === {prefix}End.value && right === {prefix}Start.value) {{
+                    return [{{...pair, detected: {{
+                      first: pair.detected.second, second: pair.detected.first
+                    }}}}];
+                  }}
+                  return [];
                 }});
                 const draw = () => {{
                   const pairs = matching();
+                  if ({prefix}Start.value === {prefix}End.value) {{
+                    {prefix}Plots.innerHTML =
+                      '<p class="note">Choose two different values for Before and After.</p>';
+                    return;
+                  }}
                   if (!pairs.length) {{
                     {prefix}Plots.innerHTML =
                       '<p class="note">No matched pairs fit these selections.</p>';
@@ -185,8 +199,10 @@ def _transition_selector(
                     f'''{prefix}Fixed.querySelectorAll("select").forEach((select) =>
                   select.addEventListener("change", draw));'''
                 )}
-                {prefix}Start.addEventListener("change", draw);
-                {prefix}End.addEventListener("change", draw);
+                // Assigned, not added: Render runs on every attribute change and
+                // addEventListener would stack handlers bound to stale closures.
+                {prefix}Start.onchange = draw;
+                {prefix}End.onchange = draw;
                 draw();
               }};
               {prefix}Variable.innerHTML = {prefix}Attributes.map({prefix}Option).join("");
@@ -196,29 +212,6 @@ def _transition_selector(
                 '<p class="note">No matching analysis is available.</p>';
             </script>
 """
-
-
-def _transition_heatmap(data: dict[str, Any]) -> str:
-    transitions = data.get("by_attribute", {})
-    labels = sorted({
-        label for item in transitions.values()
-        for label in item.get("detected_changes", {}).get("transitions", {})
-    })
-    if not labels:
-        return '<p class="note">No matched categorical transitions are available.</p>'
-    figure = go.Figure(go.Heatmap(
-        x=labels,
-        y=list(transitions),
-        z=[
-            [numeric(transitions[attribute].get("detected_changes", {})
-                     .get("transitions", {}).get(label))
-             for label in labels]
-            for attribute in transitions
-        ],
-        colorscale="Blues",
-        colorbar={"title": "Pairs"},
-    ))
-    return chart(figure, title="", height=460)
 
 
 def _numerical_plots(data: dict[str, Any]) -> str:
@@ -235,8 +228,8 @@ def _numerical_plots(data: dict[str, Any]) -> str:
             figure.update_yaxes(title="Counterfactual difference")
             figures.append(chart(figure, title="", height=360))
     return "".join(
-        f'<article class="plot-card"><h4>6.1.{3 + index} Paired differences: '
-        f'{features[index]}</h4>{figure}</article>'
+        f'<article class="plot-card"><h4>6.1.{4 + index} Paired differences: '
+        f'{html.escape(features[index].replace("_", " "))}</h4>{figure}</article>'
         for index, figure in enumerate(figures)
     ) or '<p class="note">No paired numerical features are available.</p>'
 
@@ -292,12 +285,11 @@ def _metrics_table(data: dict[str, Any]) -> str:
 def render_chapter_six(data: dict[str, Any]) -> str:
     """Render metrics and plots from the precomputed chapter-6 artifact."""
     return f"""
-    <div id="chapter-container">
   <div class="eyebrow">Chapter 6</div>
   <h2 id="chapter-6">Counterfactual analysis</h2>
   <p class="subtitle">Counterfactual analysis investigates what changes
     when one prompt attribute changes while the rest of the prompt remains fixed.
-    The featrues and metrics we will use are:</p>
+    The features and metrics we will use are:</p>
     <ul>
       <li>Distribution of detected features: the distribution of attributes detected by the model in the generated images.</li>
       <li>Embeddings: the image embeddings extracted from the generated images.</li>
@@ -312,8 +304,10 @@ def render_chapter_six(data: dict[str, Any]) -> str:
   </section>
   <section id="chapter-6-features">
     <h3>6.1 Counterfactual analysis from extracted features</h3>
-    <p>Each transition heatmap uses detected values on both axes. Cells show
-    the number of matched pairs transitioning from the y-axis value to the x-axis value.</p>
+    <p>Each matched pair holds two images whose prompts differ only in the changing
+    attribute. The stacked bars show, for every other detected attribute, the detected
+    categories before and after the change: if the bars differ, changing one attribute
+    also shifted attributes that were not asked to change.</p>
     <article class="plot-card">
       <h4>6.1.1 Detected value transitions in control prompts</h4>
       {_transition_selector(data.get("control_analysis", {}), prefix="chapterSixControl",
@@ -331,6 +325,10 @@ def render_chapter_six(data: dict[str, Any]) -> str:
       <h4>6.1.3 Aggregate detected category changes</h4>
       {_bar_chart(data)}
     </article>
+    <p>The plots below show, for each numerical image feature, the distribution of
+    the paired difference (after minus before) for each changing attribute. A box
+    centred on zero means the change did not systematically affect that feature.</p>
+    {_numerical_plots(data)}
   </section>
   <section id="chapter-6-embeddings">
     <h3>6.2 Counterfactual analysis from embeddings</h3>
@@ -339,5 +337,4 @@ def render_chapter_six(data: dict[str, Any]) -> str:
     considering the intended attribute change.</p>
     <article class="plot-card">{_embedding_plots(data)}</article>
   </section>
-</div>
 """

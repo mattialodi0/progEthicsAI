@@ -10,7 +10,6 @@ def render_chapter_eight(chapter_data: dict[str, Any]) -> str:
     """Render precomputed TF-IDF caption associations."""
     serialized = json.dumps(chapter_data, ensure_ascii=True).replace("</", "<\\/")
     return f"""
-    <div id="chapter-container">
   <div class="eyebrow">Chapter 8</div>
   <h2 id="chapter-8">Caption and semantic association analysis</h2>
   <p class="subtitle">Caption vocabulary and TF-IDF rankings reveal terms that
@@ -98,10 +97,10 @@ def render_chapter_eight(chapter_data: dict[str, Any]) -> str:
     detectedSelect.addEventListener("change", renderDetected);
     renderDetectedOptions();
 
+    const chapterEightVocabulary = chapterEightData.vocabulary || [];
     document.getElementById("chapter-8-vocabulary-size").textContent =
-      chapterEightData.vocabulary.length;
+      chapterEightVocabulary.length;
     document.getElementById("chapter-8-vocabulary-list").textContent =
-      chapterEightData.vocabulary.join(", ");
+      chapterEightVocabulary.join(", ");
   </script>
-  </div>
 """
