@@ -215,7 +215,9 @@ def build_report(
       <a class="supitem" href="#chapter-8" data-section-link="chapter-8">8. Caption and semantic associations</a>
       <a class="subitem" href="#chapter-8-prompt" data-section-link="chapter-8-prompt">Prompt-word associations</a>
       <a class="subitem" href="#chapter-8-attributes" data-section-link="chapter-8-attributes">Word-attribute associations</a>
-      <a class="subitem" href="#chapter-8-vocabulary" data-section-link="chapter-8-vocabulary">Caption vocabulary</a>
+      <a class="subitem" href="#chapter-8-sentiment" data-section-link="chapter-8-sentiment">Description sentiment</a>
+      <a class="subitem" href="#chapter-8-diversity" data-section-link="chapter-8-diversity">Vocabulary diversity</a>
+      <a class="subitem" href="#chapter-8-vocabulary" data-section-link="chapter-8-vocabulary">Stopwords and vocabulary</a>
     </nav>
   </aside>
   <main>
