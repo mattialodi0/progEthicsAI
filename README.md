@@ -13,6 +13,33 @@ Onxe they are over, the final result will be a report containing informations, e
 ## Prompts generation
 ## Images generation
 ## Features extraction
+
+Generation and extraction are the compute-heavy steps (GPU). Clone the repo in a
+Colab runtime and run them there; only the resulting folder is needed locally.
+
+```bash
+!git clone <repo-url> && cd progEthics && pip install -r requirements-colab.txt
+RUN=/content/drive/MyDrive/ethics/PixArtSigma
+!python -m src.generation.generate_images --model pixart-sigma --out $RUN   # images + metadata
+!python -m src.extraction.extract_features --run $RUN                       # -> all_metadata.json.gz
+```
+
+- `src/generation/generate_images.py` reads the prompt files (`assets/*_prompts.txt`, one
+  per prompt mode) and writes `images/` and `generation_metadata.jsonl`. It is an *example*
+  adapter: to audit another model add an entry to `MODELS` or pass `--model module:Class`
+  (subclass of `ImageGenerator`); nothing else in the pipeline changes.
+- `src/extraction/extract_features.py` runs independent stages (`image_metrics`, `faces`
+  [DeepFace], `florence` [caption + objects], `clip` [embeddings], `yolo` [objects]) and merges
+  them into a single `all_metadata.json.gz`. Choose stages with `--stages`.
+- Both steps are resumable (re-run the same command after a disconnect) and keep
+  `<run>/config.json` up to date (model, generation settings, stage status and counters,
+  extraction models, environment). The analysis and report read that same file.
+
+Locally, once `<run>/all_metadata.json.gz` exists:
+
+```powershell
+python -m src.analysis.analyzer --config <run>/config.json --data <run>/all_metadata.json.gz --output <run>/analysis.json
+```
 ## Feature Analysis and reporting
 
 Analysis and HTML rendering are separate steps. The analysis step reads the
