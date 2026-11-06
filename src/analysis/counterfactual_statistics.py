@@ -16,6 +16,14 @@ from .general_statistics import (
 )
 from .prompt_adherence import _label as _adherence_label
 from .prompt_adherence import _value as _adherence_value
+from .stats_utils import (
+    cohen_h,
+    mean_summary,
+    newcombe_difference,
+    one_sample_t_p,
+    rounded,
+    two_proportion_p,
+)
 
 
 COUNTERFACTUAL_ATTRIBUTES = ("gender", "race", "age", "emotion", "job", "workplace")
@@ -35,6 +43,8 @@ PROMPT_VALUES = {
     ),
 }
 CONTROL_ATTRIBUTES = ("gender", "race", "age", "job")
+# Smallest number of images per side for a side-effect comparison.
+MIN_SIDE_EFFECT_IMAGES = 5
 DETECTED_ATTRIBUTES = tuple(dict.fromkeys((*MAIN_ATTRIBUTES, "emotion")))
 
 
@@ -103,6 +113,61 @@ def _summary(values: list[float]) -> dict[str, Any]:
     }
 
 
+def _paired_summary(values: list[float]) -> dict[str, Any]:
+    """``_summary`` plus the uncertainty of the mean paired difference."""
+    result = _summary(values)
+    stats = mean_summary(values)
+    result.update(rounded({
+        "sd": stats["sd"],
+        "ci_low": stats["ci_low"],
+        "ci_high": stats["ci_high"],
+        # Standardized mean difference of paired data (Cohen's d_z).
+        "dz": stats["mean"] / stats["sd"] if stats["sd"] else None,
+        "p_value": one_sample_t_p(values),
+    }))
+    return result
+
+
+def _side_effects(
+    detected: dict[str, dict[str, tuple[list[str], list[str]]]],
+) -> list[dict[str, Any]]:
+    """Compare non-requested detected attributes between the two sides.
+
+    ``detected[contrast][feature]`` holds the detected values of the first
+    and second images of every matched pair. The two images are independent
+    generations (pairs are matched by prompt template, not by seed), so the
+    sides are compared as two independent samples.
+    """
+    rows = []
+    for contrast, features in sorted(detected.items()):
+        first_value, second_value = contrast.split(" vs ")
+        for feature, (first, second) in sorted(features.items()):
+            if min(len(first), len(second)) < MIN_SIDE_EFFECT_IMAGES:
+                continue
+            first_counts, second_counts = Counter(first), Counter(second)
+            for category in sorted(set(first_counts) | set(second_counts)):
+                k_first, k_second = first_counts[category], second_counts[category]
+                difference, low, high = newcombe_difference(
+                    k_second, len(second), k_first, len(first))
+                rows.append(rounded({
+                    "contrast": contrast,
+                    "first": first_value,
+                    "second": second_value,
+                    "feature": feature,
+                    "category": category,
+                    "n_first": len(first),
+                    "n_second": len(second),
+                    "first_share": k_first / len(first),
+                    "second_share": k_second / len(second),
+                    "difference": difference,
+                    "ci_low": low,
+                    "ci_high": high,
+                    "cohen_h": cohen_h(k_second / len(second), k_first / len(first)),
+                    "p_value": two_proportion_p(k_second, len(second), k_first, len(first)),
+                }))
+    return rows
+
+
 def _adherence(record: dict[str, Any], attribute: str) -> bool | None:
     features = record.get("prompt_feats")
     requested = features.get(attribute) if isinstance(features, dict) else None
@@ -143,8 +208,18 @@ def _attribute_analysis(
     within_distances: list[float] = []
     between_distances: list[float] = []
     embeddings_by_condition: defaultdict[str, dict[int, list[float]]] = defaultdict(dict)
+    side_detected: defaultdict[str, defaultdict[str, tuple[list[str], list[str]]]] = (
+        defaultdict(lambda: defaultdict(lambda: ([], [])))
+    )
     for condition_pair, first, second in pairs:
         first_condition, second_condition = condition_pair.split(" vs ")
+        for feature in DETECTED_ATTRIBUTES:
+            if feature == attribute:
+                continue
+            for side, record in ((0, first), (1, second)):
+                value = _detected_value(record, feature)
+                if value is not None:
+                    side_detected[condition_pair][feature][side].append(value)
         first_detected = _adherence_value(first, attribute, _condition(first, attribute))
         second_detected = _adherence_value(second, attribute, _condition(second, attribute))
         first_detected = str(first_detected).lower() if first_detected is not None else "missing"
@@ -197,8 +272,9 @@ def _attribute_analysis(
             for condition, values in sorted(adherence.items())
         },
         "numerical_differences": {
-            feature: _summary(values) for feature, values in sorted(numerical.items())
+            feature: _paired_summary(values) for feature, values in sorted(numerical.items())
         },
+        "side_effects": _side_effects(side_detected),
         "embeddings": {
             "paired_cosine_distance": _summary(embedding_distances),
             "between_pair_euclidean_distance": _summary(between_distances),

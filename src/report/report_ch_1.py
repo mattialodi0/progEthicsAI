@@ -6,7 +6,7 @@ import html
 import json
 from typing import Any
 
-from .explain import chapter_header, esc, guide
+from .explain import callout, chapter_header, esc, guide
 
 
 def _metric_card(label: str, value: Any, help_text: str = "", href: str = "") -> str:
@@ -24,11 +24,13 @@ def _metric_card(label: str, value: Any, help_text: str = "", href: str = "") ->
 def render_chapter_one(
     summary: dict[str, Any],
     indicators: list[tuple[str, str, str, str]] | None = None,
+    conclusions: list[str] | None = None,
 ) -> str:
     """Render the executive summary chapter.
 
     ``indicators`` are (label, value, explanation, link) tiles computed from
-    the other chapters by ``insights.headline_indicators``.
+    the other chapters by ``insights.headline_indicators``; ``conclusions`` are
+    the data-driven points of ``insights.conclusive_insights``.
     """
     settings = summary.get("generation_settings") or {}
     settings_html = (
@@ -60,13 +62,28 @@ def render_chapter_one(
         if tiles else
         '<p class="placeholder">Headline indicators are not available for this artifact.</p>'
     )
+    conclusions_html = (
+        '<section id="chapter-1-conclusions" aria-labelledby="conclusions-heading">'
+        '<h3 id="conclusions-heading">Main conclusions</h3>'
+        + callout("finding", conclusions, "What the audit found")
+        + '<p class="note">Computed from the cross-analysis in <a href="#chapter-9">chapter 9</a>. '
+          "They describe measured differences in this sample, not whether the model is fair "
+          'overall. How the numbers were obtained and how far they can be trusted is '
+          'explained in <a href="#chapter-10">chapter 10</a>.</p></section>'
+        if conclusions else ""
+    )
     return f"""
   {chapter_header(1, "Executive summary",
-                  "What was audited, how much evidence is there, and what stands out?",
-                  "<p>This chapter is a one-page overview: the model and configuration, the "
-                  "size of the generated sample, a handful of headline indicators drawn from "
-                  "the later chapters, and what this kind of audit can and cannot "
-                  "establish.</p>")}
+                  "Does the model treat different social groups fairly, and how strong is the "
+                  "evidence?",
+                  "<p>This audit probes a text-to-image model for <strong>bias and "
+                  "fairness</strong>: who it draws when the prompt does not say, whether it "
+                  "follows requests equally well for every group, which demographics it ties "
+                  "to jobs, places and traits, and whether changing a single word changes "
+                  "unrelated parts of the image. This chapter is a one-page overview: the "
+                  "main conclusions, the model and sample, headline indicators from the later "
+                  "chapters, and what this kind of audit can and cannot establish.</p>")}
+  {conclusions_html}
   <section id="chapter-1-model" aria-labelledby="model-heading">
     <h3 id="model-heading">Model and audit configuration</h3>
     <table><tbody>

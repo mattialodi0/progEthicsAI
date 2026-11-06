@@ -33,6 +33,11 @@ DETECTED_ATTRIBUTES = ("gender", "race", "age", "emotion")
 DEFAULT_MIN_GROUP_SIZE = 2
 DEFAULT_TOP_TERMS = 5
 DEFAULT_SENTIMENT_WORDS = 5
+# Term associations: minimum captions containing a term, overall and in the
+# group, and how many over-represented terms are kept per group.
+DEFAULT_TERM_MIN_DOCUMENTS = 5
+DEFAULT_TERM_MIN_GROUP_DOCUMENTS = 3
+DEFAULT_TERM_ASSOCIATIONS = 10
 
 # Word categories, keyed by the Penn Treebank tag prefix and the WordNet POS
 # used for lemmatization.
@@ -269,6 +274,83 @@ def _tfidf(
 
 
 # --------------------------------------------------------------------------
+# Tested term associations
+# --------------------------------------------------------------------------
+
+def _term_associations(
+    grouped_records: dict[str, list[dict[str, Any]]],
+    parsed: dict[int, dict[str, Any]],
+    *,
+    min_documents: int,
+    min_group_documents: int,
+    keep: int,
+) -> dict[str, dict[str, Any]]:
+    """Terms over-represented in one group relative to the other groups.
+
+    Unit of analysis is the caption: a term is present or absent in each
+    caption (any word category). For every group, the share of its captions
+    containing the term is compared with the share in the captions of the
+    *other values of the same attribute* — the same prompt context — using
+    the log odds ratio with a 0.5 continuity correction, its Wald 95%
+    interval and a two-sided z-test. Unlike TF-IDF scores these are
+    comparable across groups and carry their own uncertainty.
+    """
+    from .stats_utils import normal_p
+
+    documents = {
+        group: [
+            {word for words in parsed[id(record)]["words"].values() for word in words}
+            for record in records
+        ]
+        for group, records in grouped_records.items()
+    }
+    if len(documents) < 2:
+        return {}
+    totals = Counter(term for docs in documents.values() for doc in docs for term in doc)
+    total_documents = sum(len(docs) for docs in documents.values())
+    result: dict[str, dict[str, Any]] = {}
+    for group, docs in documents.items():
+        in_group = Counter(term for doc in docs for term in doc)
+        n_group = len(docs)
+        n_rest = total_documents - n_group
+        if not n_group or not n_rest:
+            continue
+        rows = []
+        tested = 0
+        for term, count in in_group.items():
+            if count < min_group_documents or totals[term] < min_documents:
+                continue
+            tested += 1
+            rest = totals[term] - count
+            a, b = count + 0.5, n_group - count + 0.5
+            c, d = rest + 0.5, n_rest - rest + 0.5
+            log_odds = math.log(a * d / (b * c))
+            se = math.sqrt(1 / a + 1 / b + 1 / c + 1 / d)
+            z = log_odds / se
+            if z <= 0:
+                continue
+            rows.append({
+                "term": term,
+                "group_documents": count,
+                "group_n": n_group,
+                "group_share": round(count / n_group, 6),
+                "rest_documents": rest,
+                "rest_n": n_rest,
+                "rest_share": round(rest / n_rest, 6),
+                "log_odds": round(log_odds, 6),
+                "ci_low": round(log_odds - 1.96 * se, 6),
+                "ci_high": round(log_odds + 1.96 * se, 6),
+                "z": round(z, 4),
+                "p_value": normal_p(z),
+            })
+        rows.sort(key=lambda item: (-item["z"], item["term"]))
+        # ``tested`` counts every eligible term, including those not kept, so
+        # a multiple-testing correction can account for the whole family.
+        result[group] = {"tested": tested, "terms": rows[:keep]}
+    return result
+
+
+# --------------------------------------------------------------------------
 # Sentiment and vocabulary diversity
 # --------------------------------------------------------------------------
 
@@ -286,6 +368,7 @@ def _mean_ci(values: list[float]) -> dict[str, Any]:
     return {
         "n": n,
         "mean": round(mean, 4),
+        "sd": round(math.sqrt(variance), 4) if n > 1 else 0.0,
         "ci_low": round(mean - half_width, 4),
         "ci_high": round(mean + half_width, 4),
         "positive_share": round(sum(v > SENTIMENT_THRESHOLD for v in values) / n, 4),
@@ -470,6 +553,18 @@ def build_caption_analysis(
             conditioned[detected_attribute] = output_groups
         detected_associations[prompt_attribute] = conditioned
 
+    term_settings = {
+        "min_documents": max(1, int(config.get(
+            "caption_term_min_documents", DEFAULT_TERM_MIN_DOCUMENTS))),
+        "min_group_documents": max(1, int(config.get(
+            "caption_term_min_group_documents", DEFAULT_TERM_MIN_GROUP_DOCUMENTS))),
+        "keep": max(1, int(config.get("caption_term_associations", DEFAULT_TERM_ASSOCIATIONS))),
+    }
+    term_associations = {
+        attribute: _term_associations(groups, parsed, **term_settings)
+        for attribute, groups in prompt_groups.items()
+    }
+
     lexical_profiles = {
         "prompt": {
             attribute: _lexical_profiles(groups, parsed, parser, min_group_size, sentiment_words)
@@ -510,4 +605,6 @@ def build_caption_analysis(
         "prompt_associations": prompt_associations,
         "detected_associations": detected_associations,
         "lexical_profiles": lexical_profiles,
+        "term_associations": term_associations,
+        "term_association_settings": term_settings,
     }

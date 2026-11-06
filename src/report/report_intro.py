@@ -14,6 +14,10 @@ _LENSES = (
      "Chapters 5, 7, 8", "#chapter-5"),
     ("Counterfactual", "What else changes when only one word of the prompt changes?",
      "Chapter 6", "#chapter-6"),
+    ("Synthesis", "Which disparities are large, reliable and confirmed by several kinds of "
+     "evidence?", "Chapter 9", "#chapter-9"),
+    ("Method", "How were the numbers produced and how far can they be trusted?",
+     "Chapter 10", "#chapter-10"),
 )
 
 _GLOSSARY = (
@@ -60,7 +64,8 @@ def render_reading_guide() -> str:
     estimates gender, race, age and emotion, an object detector lists visible items, a
     captioning model describes the scene, and CLIP turns each image into an embedding
     vector. Fairness questions are then answered by comparing those measurements across
-    prompt groups. The audit looks at the model through four lenses:</p>
+    prompt groups. The audit looks at the model through four lenses, and chapter 9 combines
+    them:</p>
     <div class="lens-grid">{lenses}</div>
     <h3>Fairness questions this report helps answer</h3>
     <ol class="questions">

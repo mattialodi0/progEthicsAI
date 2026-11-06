@@ -8,6 +8,12 @@ from itertools import combinations
 from typing import Any
 
 from .general_statistics import _detected_value
+from .stats_utils import (
+    contingency_statistics,
+    regularized_gamma_q,
+    rounded,
+    wilson,
+)
 
 
 PROMPT_ATTRIBUTES = (
@@ -39,52 +45,23 @@ NON_OBJECT_LABELS = {
 }
 
 
-def _regularized_gamma_q(shape: float, value: float) -> float:
-    """Return the regularized upper incomplete gamma function Q(a, x)."""
-    if value <= 0:
-        return 1.0
-    if value < shape + 1.0:
-        term = 1.0 / shape
-        series = term
-        for index in range(1, 1000):
-            term *= value / (shape + index)
-            series += term
-            if abs(term) <= abs(series) * 3e-14:
-                break
-        return max(
-            0.0,
-            min(1.0, 1.0 - series * math.exp(-value + shape * math.log(value)
-                                                - math.lgamma(shape))),
-        )
+_regularized_gamma_q = regularized_gamma_q
+MIN_OBJECT_COUNT = 3
+ASSOCIATED_OBJECTS = 8
 
-    tiny = 1e-300
-    numerator = 1.0
-    denominator = value + 1.0 - shape
-    if abs(denominator) < tiny:
-        denominator = tiny
-    fraction = numerator / denominator
-    for index in range(1, 1000):
-        an = -index * (index - shape)
-        if abs(denominator) < tiny:
-            denominator = tiny
-        if abs(numerator) < tiny:
-            numerator = tiny
-        denominator = an / denominator + value + 1.0 - shape
-        if abs(denominator) < tiny:
-            denominator = tiny
-        numerator = (value + index - shape) + an / numerator
-        if abs(numerator) < tiny:
-            numerator = tiny
-        denominator = 1.0 / denominator
-        delta = numerator * denominator
-        fraction *= delta
-        if abs(delta - 1.0) <= 3e-14:
-            break
-    return max(
-        0.0,
-        min(1.0, math.exp(-value + shape * math.log(value)
-                          - math.lgamma(shape)) * fraction),
-    )
+
+def _fisher_p(count: int, total: int, rest_count: int, rest_total: int) -> float | None:
+    """Two-sided Fisher exact test: object share in the group vs the rest."""
+    if not total or not rest_total:
+        return None
+    try:
+        from scipy.stats import fisher_exact
+    except ImportError:  # pragma: no cover - scipy ships with scikit-learn
+        return None
+    _, p_value = fisher_exact([[count, total - count], [rest_count, rest_total - rest_count]])
+    return float(p_value)
+# Bootstrap resamples behind the Cramér's V interval of every association matrix.
+V_BOOTSTRAP = 300
 
 
 def _association_statistics(
@@ -119,11 +96,34 @@ def _association_statistics(
     cramers_v = math.sqrt(
         chi_square / (total * min(len(rows) - 1, len(columns) - 1))
     )
+    extended = contingency_statistics(
+        [[counts[row][column] for column in columns] for row in rows],
+        bootstrap=V_BOOTSTRAP,
+    )
     return {
         "chi_square": round(chi_square, 6),
         "degrees_of_freedom": degrees_of_freedom,
         "p_value": round(p_value, 6),
+        # Unrounded p-value: tiny values matter for multiple-testing correction.
+        "p_value_exact": p_value,
         "cramers_v": round(cramers_v, 6),
+        # Bergsma's bias correction removes the upward bias of V in small or
+        # sparse tables; the interval is a multinomial percentile bootstrap.
+        "cramers_v_corrected": round(extended["cramers_v_corrected"], 6),
+        "cramers_v_ci": rounded(extended["cramers_v_ci"]),
+    }
+
+
+def _adjusted_residuals(
+    counts: dict[str, dict[str, int]], rows: list[str], columns: list[str]
+) -> dict[str, dict[str, float]]:
+    """Standardized Pearson residuals; |r| > 1.96 marks a deviating cell."""
+    residuals = contingency_statistics(
+        [[counts[row][column] for column in columns] for row in rows]
+    )["adjusted_residuals"]
+    return {
+        row: {column: round(residuals[i][j], 4) for j, column in enumerate(columns)}
+        for i, row in enumerate(rows)
     }
 
 
@@ -269,13 +269,25 @@ def _association_matrix(
     data: list[dict[str, Any]],
     prompt_attribute: str,
     output_feature: str,
+    *,
+    unrequested_only: bool = False,
 ) -> dict[str, Any]:
+    """Prompt-attribute × detected-feature contingency table.
+
+    With ``unrequested_only`` the table only uses images whose prompt does
+    not itself request the output feature (e.g. job × detected gender
+    without the "female doctor" prompts). That isolates the model's default
+    choice from adherence to an explicit request.
+    """
     counts: defaultdict[str, Counter[str]] = defaultdict(Counter)
     prompt_categories: set[str] = set()
     output_categories: set[str] = set()
 
     for record in data:
         prompt_features = record.get("prompt_feats", {})
+        if (unrequested_only and isinstance(prompt_features, dict)
+                and prompt_features.get(output_feature) is not None):
+            continue
         prompt_value = (
             prompt_features.get(prompt_attribute)
             if isinstance(prompt_features, dict)
@@ -321,6 +333,8 @@ def _association_matrix(
         "statistics": _association_statistics(
             matrix_counts, rows, columns
         ),
+        "adjusted_residuals": _adjusted_residuals(matrix_counts, rows, columns),
+        "unrequested_only": unrequested_only,
         "total": sum(sample_counts.values()),
     }
 
@@ -380,9 +394,12 @@ def _stereotypical_associations(data: list[dict[str, Any]]) -> dict[str, Any]:
         rows = []
         for group, group_total in sorted(groups[attribute].items()):
             candidates = []
+            rest_total = overall_total - group_total
             for object_label, count in group_objects[attribute][group].items():
                 conditional_probability = count / group_total
                 baseline = overall_prevalence.get(object_label, 0.0)
+                rest_count = object_totals[attribute][object_label] - count
+                low, high = wilson(count, group_total)
                 candidates.append({
                     "object": object_label,
                     "count": count,
@@ -390,6 +407,17 @@ def _stereotypical_associations(data: list[dict[str, Any]]) -> dict[str, Any]:
                     "lift": round(
                         conditional_probability / baseline, 6
                     ) if baseline else None,
+                    # Wilson interval of P(object | group) divided by the
+                    # (much more precise) pooled baseline P(object).
+                    "lift_ci": [round(low / baseline, 6), round(high / baseline, 6)]
+                    if baseline else [None, None],
+                    # Same object in the other values of this attribute: the
+                    # reference for the Fisher test below.
+                    "rest_count": rest_count,
+                    "rest_observations": rest_total,
+                    "rest_probability": round(rest_count / rest_total, 6)
+                    if rest_total else None,
+                    "p_value": _fisher_p(count, group_total, rest_count, rest_total),
                 })
             candidates.sort(
                 key=lambda item: (
@@ -398,10 +426,23 @@ def _stereotypical_associations(data: list[dict[str, Any]]) -> dict[str, Any]:
                 ),
                 reverse=True,
             )
+            # Most over-represented objects (not the most frequent ones):
+            # seen in at least MIN_OBJECT_COUNT images, ranked by lift.
+            associated = sorted(
+                (item for item in candidates
+                 if item["count"] >= MIN_OBJECT_COUNT and item["lift"] is not None),
+                key=lambda item: (-item["lift"], -item["count"], item["object"]),
+            )[:ASSOCIATED_OBJECTS]
             rows.append({
                 "group": group,
                 "observations": group_total,
                 "top_objects": candidates[:5],
+                "associated_objects": associated,
+                # Objects eligible for ``associated_objects`` (the test family).
+                "objects_tested": sum(
+                    1 for item in candidates
+                    if item["count"] >= MIN_OBJECT_COUNT and item["lift"] is not None
+                ),
             })
         result[attribute] = {
             "attribute": attribute,
@@ -522,6 +563,20 @@ def _interaction_model(
     }
 
 
+def _requests_output(
+    prompt: dict[str, Any], output_feature: str, first_attribute: str, second_attribute: str
+) -> bool:
+    """True when the prompt itself asks for the detected feature.
+
+    E.g. a control prompt "young white female nurse" requests gender, so it
+    must not shape the race × job → detected-gender expectation. When the
+    output is one of the pair (race × job → detected race) every record
+    requests it by construction and nothing is excluded.
+    """
+    return (output_feature not in (first_attribute, second_attribute)
+            and prompt.get(output_feature) is not None)
+
+
 def _intersectional_analysis(data: list[dict[str, Any]]) -> dict[str, Any]:
     """Compare joint prompt groups with their constituent group expectations."""
     result: dict[str, Any] = {}
@@ -538,6 +593,8 @@ def _intersectional_analysis(data: list[dict[str, Any]]) -> dict[str, Any]:
                     continue
                 first = prompt.get(first_attribute)
                 second = prompt.get(second_attribute)
+                if _requests_output(prompt, output_feature, first_attribute, second_attribute):
+                    continue
                 detected = _detected_value(record, output_feature)
                 if first is None or second is None or detected is None:
                     continue
@@ -659,6 +716,9 @@ def _intersectional_analysis(data: list[dict[str, Any]]) -> dict[str, Any]:
                     second = prompt.get(second_attribute)
                     if first is None or second is None:
                         continue
+                    if _requests_output(prompt, output_feature, first_attribute,
+                                        second_attribute):
+                        continue
                     category_observations.append((
                         str(first).strip().lower(), str(second).strip().lower(),
                         int(str(detected).strip().lower() == category),
@@ -730,10 +790,23 @@ def collect_bias_stats(
         if association["outputs"]:
             key = f"{first_attribute}__{second_attribute}"
             double_associations[key] = association
+    # Same matrices restricted to images that do not request the detected
+    # feature: the common comparison standard used by the synthesis chapter.
+    associations_unrequested = {
+        prompt_attribute: {
+            output_feature: _association_matrix(
+                records, prompt_attribute, output_feature, unrequested_only=True
+            )
+            for output_feature in OUTPUT_FEATURES
+            if output_feature != prompt_attribute
+        }
+        for prompt_attribute in PROMPT_ATTRIBUTES
+    }
     return {
         "prompt_attributes": available,
         "output_features": available_features,
         "associations": associations,
+        "associations_unrequested": associations_unrequested,
         "double_associations": double_associations,
         "intersectional": _intersectional_analysis(records),
         "stereotypical_associations": _stereotypical_associations(records),

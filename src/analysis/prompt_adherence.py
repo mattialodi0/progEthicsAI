@@ -75,6 +75,17 @@ def _accuracies(records: list[dict[str, Any]], attributes: list[str]) -> dict[st
     return {attribute: _measurement(records, attribute)["accuracy"] for attribute in attributes}
 
 
+def _accuracy_counts(records: list[dict[str, Any]], attributes: list[str]) -> dict[str, Any]:
+    """Correct and evaluated images per attribute, so intervals can be computed."""
+    result = {}
+    for attribute in attributes:
+        measurement = _measurement(records, attribute)
+        correct = sum(row.get(label, 0) for label, row in measurement["counts"].items())
+        result[attribute] = {"correct": correct, "total": measurement["total"],
+                             "unmatched": measurement["unmatched"]}
+    return result
+
+
 def _by_category(data: list[dict[str, Any]], attributes: list[str]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for category in MAIN_ATTRIBUTES:
@@ -85,7 +96,8 @@ def _by_category(data: list[dict[str, Any]], attributes: list[str]) -> dict[str,
             if value is not None:
                 groups[str(value).strip().lower()].append(record)
         result[category] = {
-            value: {"n_images": len(records), "accuracy": _accuracies(records, attributes)}
+            value: {"n_images": len(records), "accuracy": _accuracies(records, attributes),
+                    "counts": _accuracy_counts(records, attributes)}
             for value, records in sorted(groups.items())
         }
     return result
@@ -136,7 +148,9 @@ def prompt_adherence(data: list[dict[str, Any]], attributes: list[str], config: 
     return {
         "attributes": detectable,
         "by_attribute": {attribute: _measurement(data, attribute) for attribute in detectable},
-        "by_prompt_mode": {mode: {"n_images": len(records), "accuracy": _accuracies(records, detectable)}
+        "by_prompt_mode": {mode: {"n_images": len(records),
+                                  "accuracy": _accuracies(records, detectable),
+                                  "counts": _accuracy_counts(records, detectable)}
                            for mode, records in sorted(modes.items())},
         "by_demographic_category": _by_category(data, detectable),
         "combinations": _combinations(data, detectable),

@@ -5,12 +5,18 @@ from __future__ import annotations
 from typing import Any
 
 from .general_statistics import _embedding, _record_mode
+from .stats_utils import hedges_g, kruskal, mann_whitney_p, mean_summary, rounded
 
 IMAGE_FEATURES = (
     "brightness", "saturation", "contrast", "n_people",
     "person_area_ratio", "face_area_ratio",
 )
 MAX_DISTANCE_POINTS = 600
+# Label permutations behind the silhouette null distribution.
+SILHOUETTE_PERMUTATIONS = 40
+# Groups smaller than this are left out of the feature tests and the probe.
+MIN_TEST_GROUP = 5
+PROBE_FOLDS = 5
 
 
 def _number(value: Any) -> float | None:
@@ -129,6 +135,102 @@ def _silhouette(distances: Any, labels: list[str | None]) -> float | None:
     return round(sum(scores) / len(scores), 6) if scores else None
 
 
+def _feature_tests(values_by_group: dict[str, list[float]]) -> dict[str, Any]:
+    """Kruskal–Wallis across groups and each group against the other groups."""
+    groups = {group: values for group, values in values_by_group.items()
+              if len(values) >= MIN_TEST_GROUP}
+    if len(groups) < 2:
+        return {}
+    omnibus = kruskal(list(groups.values()))
+    result_groups = {}
+    for group, values in groups.items():
+        rest = [value for other, items in groups.items() if other != group for value in items]
+        summary = mean_summary(values)
+        effect = hedges_g(values, rest)
+        result_groups[group] = rounded({
+            **summary,
+            "rest_mean": mean_summary(rest)["mean"],
+            "rest_n": len(rest),
+            "hedges_g": effect["g"],
+            "g_ci_low": effect["ci_low"],
+            "g_ci_high": effect["ci_high"],
+            "p_value": mann_whitney_p(values, rest),
+        })
+    return {**rounded(omnibus), "groups": result_groups}
+
+
+def _silhouette_null(
+    distances: Any, labels: list[str | None], observed: float | None
+) -> dict[str, Any]:
+    """Silhouette under randomly permuted labels (same group sizes)."""
+    if observed is None:
+        return {}
+    import numpy as np
+
+    generator = np.random.default_rng(0)
+    positions = [index for index, label in enumerate(labels) if label is not None]
+    values = [labels[index] for index in positions]
+    scores = []
+    for _ in range(SILHOUETTE_PERMUTATIONS):
+        shuffled = list(labels)
+        for index, label in zip(positions, generator.permutation(values)):
+            shuffled[index] = str(label)
+        score = _silhouette(distances, shuffled)
+        if score is not None:
+            scores.append(score)
+    if not scores:
+        return {}
+    mean = sum(scores) / len(scores)
+    spread = (sum((score - mean) ** 2 for score in scores) / max(1, len(scores) - 1)) ** 0.5
+    return rounded({
+        "null_mean": mean,
+        "null_sd": spread,
+        "permutations": len(scores),
+        "p_value": (1 + sum(score >= observed for score in scores)) / (1 + len(scores)),
+    })
+
+
+def _probe(vectors: list[list[float]], labels: list[str | None]) -> dict[str, Any]:
+    """Cross-validated linear probe: can the group be read off the embedding?"""
+    try:
+        import numpy as np
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.metrics import balanced_accuracy_score
+        from sklearn.model_selection import StratifiedKFold, cross_val_predict
+    except ImportError:
+        return {}
+    counts: dict[str, int] = {}
+    for label in labels:
+        if label is not None:
+            counts[label] = counts.get(label, 0) + 1
+    keep = {label for label, count in counts.items() if count >= max(MIN_TEST_GROUP, PROBE_FOLDS)}
+    indices = [index for index, label in enumerate(labels) if label in keep]
+    if len(keep) < 2:
+        return {}
+    dimensions = min(len(vectors[index]) for index in indices)
+    matrix = np.asarray([vectors[index][:dimensions] for index in indices], dtype=float)
+    target = np.asarray([labels[index] for index in indices])
+    model = LogisticRegression(max_iter=2000, class_weight="balanced")
+    try:
+        predicted = cross_val_predict(
+            model, matrix, target,
+            cv=StratifiedKFold(n_splits=PROBE_FOLDS, shuffle=True, random_state=0),
+        )
+    except ValueError:
+        return {}
+    accuracy = float(balanced_accuracy_score(target, predicted))
+    chance = 1 / len(keep)
+    return rounded({
+        "balanced_accuracy": accuracy,
+        "chance": chance,
+        # 0 = chance, 1 = perfect: comparable across groupings with different k.
+        "above_chance": (accuracy - chance) / (1 - chance),
+        "n_images": len(indices),
+        "n_classes": len(keep),
+        "folds": PROBE_FOLDS,
+    })
+
+
 def build_visual_feature_analysis(
     data: list[dict[str, Any]], config: dict[str, Any]
 ) -> dict[str, Any]:
@@ -177,6 +279,11 @@ def build_visual_feature_analysis(
                 for grouping in groupings
             },
         }
+        features[feature]["tests"] = {
+            grouping: tests
+            for grouping in attributes
+            if (tests := _feature_tests(features[feature]["by_group"][grouping]))
+        }
 
     embedded = [
         (record_group, vector)
@@ -200,9 +307,12 @@ def build_visual_feature_analysis(
     embedding_groups = {}
     for grouping in groupings:
         labels = [embedded[index][0][grouping] for index in sample_indices]
+        score = _silhouette(distances, labels) if distances is not None else None
         embedding_groups[grouping] = {
             "separability": {
-                "score": _silhouette(distances, labels) if distances is not None else None,
+                "score": score,
+                "null": _silhouette_null(distances, labels, score) if distances is not None else {},
+                "probe": _probe(vectors, [record_group[grouping] for record_group, _ in embedded]),
                 "n_images": len(vectors),
                 "n_clusters": len({
                     record_group[grouping] for record_group, _ in embedded

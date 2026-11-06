@@ -1,9 +1,12 @@
 """One data builder per report chapter.
 
-Every builder takes the *preprocessed* records and the config and returns the
-JSON-serializable ``report_data["chapter_N"]`` payload. Builders never read
-another chapter's output, so any subset of chapters can be regenerated on its
-own (see ``analyzer.save_analysis``).
+Every record-based builder takes the *preprocessed* records and the config and
+returns the JSON-serializable ``report_data["chapter_N"]`` payload. These
+builders never read another chapter's output, so any subset of them can be
+regenerated on its own (see ``analyzer.save_analysis``).
+
+Derived builders (chapter 9, the cross-analysis synthesis) instead read the
+payloads of the other chapters; the analyzer rebuilds them after every run.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from .general_statistics import demographic_composition, diversity_metrics, inva
 from .other_statistics import build_caption_analysis
 from .prompt_adherence import prompt_adherence
 from .prompt_statistics import collect_prompt_stats
+from .synthesis import build_synthesis
 from .visual_features import build_visual_feature_analysis
 
 ChapterBuilder = Callable[[list[dict[str, Any]], dict[str, Any]], dict[str, Any]]
@@ -83,6 +87,14 @@ CHAPTER_BUILDERS: dict[str, ChapterBuilder] = {
     "chapter_8": build_caption_analysis,
 }
 
+# Chapters derived from the other chapters' payloads rather than from the
+# records. They are cheap and are rebuilt on every analyzer run, after the
+# record-based chapters, so they are never stale.
+DerivedBuilder = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
+DERIVED_BUILDERS: dict[str, DerivedBuilder] = {
+    "chapter_9": build_synthesis,
+}
+
 CHAPTER_TITLES = {
     "chapter_1": "Executive summary",
     "chapter_2": "Dataset and generation coverage",
@@ -92,6 +104,7 @@ CHAPTER_TITLES = {
     "chapter_6": "Counterfactual fairness",
     "chapter_7": "Visual feature and embedding analysis",
     "chapter_8": "Caption and semantic association analysis",
+    "chapter_9": "Cross-analysis and key findings",
 }
 
 
@@ -103,9 +116,9 @@ def normalize_chapter(name: str | int) -> str:
             text = text[len(prefix):]
             break
     key = f"chapter_{text}"
-    if key not in CHAPTER_BUILDERS:
+    if key not in CHAPTER_BUILDERS and key not in DERIVED_BUILDERS:
         raise ValueError(
             f"Unknown chapter {name!r}; expected one of "
-            + ", ".join(key.split("_")[1] for key in CHAPTER_BUILDERS)
+            + ", ".join(key.split("_")[1] for key in (*CHAPTER_BUILDERS, *DERIVED_BUILDERS))
         )
     return key

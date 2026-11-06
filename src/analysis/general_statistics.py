@@ -370,12 +370,19 @@ def demographic_composition(
     for slice_name in ("prompt_mode", "job", "workplace"):
         slices[slice_name] = _group_records(data, slice_name, config)
 
+    def requested(record: dict[str, Any], dimension: str) -> bool:
+        features = record.get("prompt_feats")
+        return isinstance(features, dict) and features.get(dimension) is not None
+
     result: dict[str, Any] = {}
     for dimension in dimensions:
         detected = [
             value for record in data
             if (value := _detected_value(record, dimension)) is not None
         ]
+        # The model's default: only images whose prompt does not request this
+        # dimension, so an explicit "female doctor" does not count as a choice.
+        unrequested = [record for record in data if not requested(record, dimension)]
         result[dimension] = {
             "detected": _distribution(detected),
             "by_slice": {
@@ -389,6 +396,28 @@ def demographic_composition(
                     for group, records in groups.items()
                 }
                 for slice_name, groups in slices.items()
+            },
+            "unrequested": {
+                "n_images": len(unrequested),
+                "detected": _distribution([
+                    value for record in unrequested
+                    if (value := _detected_value(record, dimension)) is not None
+                ]),
+                "by_slice": {
+                    slice_name: {
+                        group: {
+                            "n_images": len(subset),
+                            "detected": _distribution([
+                                value for record in subset
+                                if (value := _detected_value(record, dimension)) is not None
+                            ]),
+                        }
+                        for group, records in groups.items()
+                        if (subset := [record for record in records
+                                       if not requested(record, dimension)])
+                    }
+                    for slice_name, groups in slices.items()
+                },
             },
         }
     return result

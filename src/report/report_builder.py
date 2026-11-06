@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 import webbrowser
 
-from .insights import headline_indicators
+from .insights import conclusive_insights, headline_indicators
 from .report_intro import render_reading_guide
 from .report_ch_1 import render_chapter_one
 from .report_ch_2 import render_chapter_two
@@ -20,6 +20,9 @@ from .report_ch_5_4 import render_intersectional_analysis
 from .report_ch_6 import render_chapter_six
 from .report_ch_7 import render_chapter_seven
 from .report_ch_8 import render_chapter_eight
+from .report_ch_9 import render_chapter_nine
+from .report_ch_10 import render_chapter_ten
+from ..analysis.synthesis import build_synthesis
 
 
 # (anchor id, label, level) — level 0 is a chapter, 1 a section.
@@ -27,6 +30,7 @@ _INDEX = (
     ("report-title", "Fairness report", -1),
     ("reading-guide", "How to read this report", -1),
     ("chapter-1", "1. Executive summary", 0),
+    ("chapter-1-conclusions", "Main conclusions", 1),
     ("chapter-1-model", "Model and configuration", 1),
     ("chapter-1-coverage", "Audit coverage", 1),
     ("chapter-1-fairness", "Headline indicators", 1),
@@ -64,6 +68,20 @@ _INDEX = (
     ("chapter-8-sentiment", "Description sentiment", 1),
     ("chapter-8-diversity", "Vocabulary diversity", 1),
     ("chapter-8-vocabulary", "Stopwords and vocabulary", 1),
+    ("chapter-9", "9. Cross-analysis and key findings", 0),
+    ("chapter-9-answers", "Fairness questions", 1),
+    ("chapter-9-findings", "Key findings", 1),
+    ("chapter-9-matrix", "Evidence matrix", 1),
+    ("chapter-9-ranked", "Ranked effect sizes", 1),
+    ("chapter-9-reliability", "Effect vs reliability", 1),
+    ("chapter-9-measurement", "Measurement caveats", 1),
+    ("chapter-9-explorer", "Results explorer", 1),
+    ("chapter-10", "10. Methodology and limitations", 0),
+    ("chapter-10-pipeline", "Audit pipeline", 1),
+    ("chapter-10-models", "Measurement models", 1),
+    ("chapter-10-statistics", "How the analysis works", 1),
+    ("chapter-10-limitations", "Limitations", 1),
+    ("chapter-10-reproducibility", "Reproducibility", 1),
 )
 
 _STYLE = """
@@ -315,10 +333,18 @@ def build_report(
     if not all(isinstance(report_data[chapter], dict) for chapter in required_chapters):
         raise ValueError("Each required report-data chapter must be a dictionary")
 
+    # Chapter 9 is derived from the other chapters' payloads. It is cheap and
+    # deterministic, so it is always recomputed here: the copy stored in the
+    # artifact (for export) can then never be stale, and artifacts written
+    # before chapter 9 existed still render.
+    synthesis = build_synthesis(report_data, config)
+    report_data = {**report_data, "chapter_9": synthesis}
+
     bias_stats = report_data["chapter_5"]
     summary = report_data["chapter_1"]
     chapters = [
-        render_chapter_one(summary, headline_indicators(report_data)),
+        render_chapter_one(summary, headline_indicators(report_data),
+                           conclusive_insights(report_data)),
         render_chapter_two(report_data["chapter_2"]),
         render_chapter_three(report_data["chapter_3"]),
         render_chapter_four(report_data["chapter_4"]),
@@ -328,6 +354,8 @@ def build_report(
         render_chapter_six(report_data.get("chapter_6", {})),
         render_chapter_seven(report_data["chapter_7"]),
         render_chapter_eight(report_data.get("chapter_8", {})),
+        render_chapter_nine(synthesis),
+        render_chapter_ten(report_data, config),
     ]
     chapters_html = "\n".join(
         f'<div class="chapter">{chapter}</div>' for chapter in chapters

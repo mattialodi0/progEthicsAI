@@ -22,6 +22,9 @@ def render_intersectional_analysis(bias_stats: dict[str, Any]) -> str:
     draws women and Black people with typical rates of a feature, but Black women with a
     very different rate. Ordinary demographic differences (chapter 5.1) cannot reveal
     this.</p>
+    <p class="note">Images whose prompt itself requests the detected feature are left out
+    (e.g. “young white female nurse” is not used for race × job → detected gender), so every
+    share describes the model's own choice rather than adherence to a request.</p>
     {findings(intersectional(data))}
     {metric_defs([
         ("Joint − constituent average (forest plot)", "P(category | joint group) minus the "

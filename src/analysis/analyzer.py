@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from .chapters import CHAPTER_BUILDERS, CHAPTER_TITLES, normalize_chapter
+from .chapters import CHAPTER_BUILDERS, CHAPTER_TITLES, DERIVED_BUILDERS, normalize_chapter
 from .preprocessing import preprocess
 
 SCHEMA_VERSION = 2
@@ -51,6 +51,7 @@ def _select_chapters(chapters: Iterable[str | int] | None) -> list[str]:
     if chapters is None:
         return list(CHAPTER_BUILDERS)
     selected = {normalize_chapter(chapter) for chapter in chapters}
+    # Derived chapters are always rebuilt, so selecting one only validates it.
     return [chapter for chapter in CHAPTER_BUILDERS if chapter in selected]
 
 
@@ -128,9 +129,25 @@ def analyze(
         if verbose > 0:
             print(f"  {chapter} ({CHAPTER_TITLES[chapter]}): {duration:.1f}s")
 
+    # Derived chapters (the synthesis) read the payloads assembled above.
+    for chapter, builder in DERIVED_BUILDERS.items():
+        start = time.perf_counter()
+        report_data[chapter] = builder(report_data, config)
+        duration = time.perf_counter() - start
+        chapter_meta[chapter] = {
+            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "duration_seconds": round(duration, 2),
+            "config_fingerprint": config_fingerprint,
+            "data_fingerprint": data_fingerprint,
+            "derived": True,
+        }
+        if verbose > 0:
+            print(f"  {chapter} ({CHAPTER_TITLES[chapter]}): {duration:.1f}s")
+
     stale = [
         chapter for chapter, meta in chapter_meta.items()
-        if chapter not in to_build and (
+        if chapter not in DERIVED_BUILDERS
+        and chapter not in to_build and (
             meta.get("config_fingerprint") != config_fingerprint
             or meta.get("data_fingerprint") != data_fingerprint
         )

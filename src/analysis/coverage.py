@@ -64,6 +64,39 @@ def _conditioning_label(attribute: str) -> str:
     }.get(attribute, attribute)
 
 
+def _detection_by_group(
+    data: list[dict[str, Any]], mode_labels: dict[str, str]
+) -> dict[str, dict[str, dict[str, int]]]:
+    """Images and images with a detected face, per prompt mode and prompt value.
+
+    Face-based features exist only where a face was detected, so a subgroup
+    with a lower detection rate is under-represented in every face-based
+    result. Uses the ``valid`` flag set by preprocessing.
+    """
+    groups: dict[str, dict[str, Counter[str]]] = {}
+
+    def add(attribute: str, value: str, valid: bool) -> None:
+        bucket = groups.setdefault(attribute, {}).setdefault(value, Counter())
+        bucket["total"] += 1
+        bucket["face_detected"] += int(valid)
+
+    for record in data:
+        if not isinstance(record, dict):
+            continue
+        valid = record.get("valid") is True
+        mode = str(record.get("mode", "unknown"))
+        add("prompt_mode", mode_labels.get(mode, mode), valid)
+        features = record.get("prompt_feats")
+        if isinstance(features, dict):
+            for attribute, value in features.items():
+                if value is not None and str(value).strip():
+                    add(attribute, str(value).strip().lower(), valid)
+    return {
+        attribute: {value: dict(counts) for value, counts in sorted(values.items())}
+        for attribute, values in sorted(groups.items())
+    }
+
+
 def build_coverage(
     data: list[dict[str, Any]],
     config: dict[str, Any],
@@ -142,6 +175,7 @@ def build_coverage(
         "conditioned_images": dict(sorted(conditioned_images.items())),
         "prompt_images": dict(sorted(prompt_images.items())),
         "valid_detection": valid_detection,
+        "detection_by_group": _detection_by_group(data, mode_labels),
         "missing_outputs": {
             "captions": total - valid_detection["caption"]["valid"],
             "embeddings": total - valid_detection["embedding"]["valid"],
