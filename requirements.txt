@@ -1,0 +1,9 @@
+umap-learn
+scikit-learn
+seaborn
+matplotlib
+plotly
+pil
+numpy
+pandas
+nltk

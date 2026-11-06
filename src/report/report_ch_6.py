@@ -2,25 +2,34 @@
 
 from __future__ import annotations
 
-import html
 import json
 from typing import Any
 
 import plotly.graph_objects as go
 
+from .explain import chapter_header, esc, findings, guide, label, metric_defs
+from .insights import chapter_six
 from .plotly_helpers import chart, numeric
 
 
 def _bar_chart(data: dict[str, Any]) -> str:
     attributes = data.get("attributes", [])
+    by_attribute = data.get("by_attribute", {})
     values = [
-        100 * numeric(data.get("by_attribute", {}).get(attribute, {})
-                      .get("detected_changes", {}).get("rate"))
+        100 * numeric(by_attribute.get(attribute, {}).get("detected_changes", {}).get("rate"))
         for attribute in attributes
     ]
-    figure = go.Figure(go.Bar(x=attributes, y=values, text=[f"{value:.1f}%" for value in values]))
-    figure.update_yaxes(title="Changed detected category (%)", range=[0, 100])
-    return chart(figure, title="", height=360)
+    figure = go.Figure(go.Bar(
+        x=attributes, y=values, text=[f"{value:.0f}%" for value in values],
+        textposition="outside", cliponaxis=False,
+        customdata=[by_attribute.get(attribute, {}).get("pairs", 0) for attribute in attributes],
+        hovertemplate="%{x}: detected value differs in %{y:.1f}% of pairs"
+                      "<br>%{customdata} matched pairs<extra></extra>",
+    ))
+    figure.update_layout(yaxis={"title": "Pairs whose detected value changed (%)",
+                                "range": [0, 110]},
+                         xaxis={"title": "Attribute changed in the prompt"})
+    return chart(figure, title="", height=340)
 
 
 def _transition_selector(
@@ -49,7 +58,7 @@ def _transition_selector(
             <script>
               const {prefix}Data = {serialized};
               const {prefix}Title = (value) => String(value).replaceAll("_", " ")
-                .replace(/\b\w/g, (letter) => letter.toUpperCase());
+                .replace(/\\b\\w/g, (letter) => letter.toUpperCase());
               const {prefix}Variable = document.getElementById("{prefix}-variable");
               const {prefix}Start = document.getElementById("{prefix}-start");
               const {prefix}End = document.getElementById("{prefix}-end");
@@ -214,45 +223,70 @@ def _transition_selector(
 """
 
 
+_FEATURE_HELP = {
+    "n_people": "number of people detected in the image",
+    "person_area_ratio": "share of the image covered by people (framing / zoom)",
+    "face_area_ratio": "share of the image covered by the face (close-up vs full body)",
+}
+
+
 def _numerical_plots(data: dict[str, Any]) -> str:
-    figures = []
-    features = data.get("numerical_features", [])
-    for feature in features:
+    cards = []
+    for feature in data.get("numerical_features", []):
         figure = go.Figure()
         for attribute in data.get("attributes", []):
             values = data.get("by_attribute", {}).get(attribute, {}).get(
                 "numerical_differences", {}).get(feature, {}).get("values", [])
             if values:
-                figure.add_trace(go.Box(y=values, name=attribute, boxmean=True))
+                figure.add_trace(go.Box(y=values, name=attribute, boxmean=True,
+                                        boxpoints="outliers", showlegend=False))
         if figure.data:
-            figure.update_yaxes(title="Counterfactual difference")
-            figures.append(chart(figure, title="", height=360))
-    return "".join(
-        f'<article class="plot-card"><h4>6.1.{4 + index} Paired differences: '
-        f'{html.escape(features[index].replace("_", " "))}</h4>{figure}</article>'
-        for index, figure in enumerate(figures)
-    ) or '<p class="note">No paired numerical features are available.</p>'
+            figure.add_hline(y=0, line_dash="dash", line_color="#52606d")
+            figure.update_yaxes(title="After − before")
+            cards.append(
+                f'<article class="plot-card"><h4>{esc(label(feature))}</h4>'
+                f'<p class="note">{esc(_FEATURE_HELP.get(feature, ""))}</p>'
+                f"{chart(figure, title='', height=340)}</article>"
+            )
+    return (f'<div class="plot-grid">{"".join(cards)}</div>' if cards else
+            '<p class="note">No paired numerical features are available.</p>')
 
 
 def _embedding_plots(data: dict[str, Any]) -> str:
     attributes = data.get("attributes", [])
+    by_attribute = data.get("by_attribute", {})
     series = {}
-    for label, key in (
-        ("Paired cosine distance", "paired_cosine_distance"),
-        ("Within-condition Euclidean distance", "within_condition_euclidean_distance"),
-        ("Between-condition Euclidean distance", "between_pair_euclidean_distance"),
+    for name, key in (
+        ("Within-condition distance (same prompt value)", "within_condition_euclidean_distance"),
+        ("Between-pair distance (matched counterfactual)", "between_pair_euclidean_distance"),
     ):
-        series[label] = [
-            numeric(data.get("by_attribute", {}).get(attribute, {}).get("embeddings", {})
-                    .get(key, {}).get("mean"))
+        series[name] = [
+            numeric(by_attribute.get(attribute, {}).get("embeddings", {}).get(key, {}).get("mean"))
             for attribute in attributes
         ]
-    figure = go.Figure([
-        go.Bar(name=label, x=attributes, y=values)
-        for label, values in series.items()
+    distance_figure = go.Figure([
+        go.Bar(name=name, x=attributes, y=values,
+               hovertemplate=f"{name}<br>%{{x}}: %{{y:.3f}}<extra></extra>")
+        for name, values in series.items()
     ])
-    figure.update_layout(barmode="group", yaxis={"title": "Mean distance"})
-    return chart(figure, title="Embedding distances within and between conditions", height=390)
+    distance_figure.update_layout(barmode="group", yaxis={"title": "Mean Euclidean distance"},
+                                  xaxis={"title": "Attribute changed in the prompt"})
+    cosine_figure = go.Figure()
+    for attribute in attributes:
+        values = by_attribute.get(attribute, {}).get("embeddings", {}).get(
+            "paired_cosine_distance", {}).get("values", [])
+        if values:
+            cosine_figure.add_trace(go.Box(y=values, name=attribute, boxmean=True,
+                                           boxpoints=False, showlegend=False))
+    cosine_figure.update_layout(yaxis={"title": "Paired cosine distance", "rangemode": "tozero"},
+                                xaxis={"title": "Attribute changed in the prompt"})
+    return (
+        '<div class="plot-grid">'
+        '<article class="plot-card"><h4>6.2.1 Paired cosine distance</h4>'
+        f'{chart(cosine_figure, title="", height=360)}</article>'
+        '<article class="plot-card"><h4>6.2.2 Counterfactual vs random variation</h4>'
+        f'{chart(distance_figure, title="", height=360)}</article></div>'
+    )
 
 
 def _metrics_table(data: dict[str, Any]) -> str:
@@ -260,54 +294,103 @@ def _metrics_table(data: dict[str, Any]) -> str:
     for attribute in data.get("attributes", []):
         item = data.get("by_attribute", {}).get(attribute, {})
         adherence = item.get("adherence", {})
-        adherence_text = ", ".join(
-            f"{condition}: {100 * numeric(stats.get('rate')):.1f}%"
+        adherence_text = "<br>".join(
+            f"{esc(condition)}: {100 * numeric(stats.get('rate')):.0f}%"
             for condition, stats in adherence.items()
         ) or "-"
-        embedding_mean = item.get("embeddings", {}).get(
-            "paired_cosine_distance", {}).get("mean")
+        embeddings = item.get("embeddings", {})
+        cosine = embeddings.get("paired_cosine_distance", {}).get("mean")
+        within = embeddings.get("within_condition_euclidean_distance", {}).get("mean")
+        between = embeddings.get("between_pair_euclidean_distance", {}).get("mean")
+        ratio = (f"{between / within:.2f}" if isinstance(between, (int, float))
+                 and isinstance(within, (int, float)) and within else "-")
         rows.append(
-            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>".format(
-                html.escape(attribute), item.get("pairs", 0),
-                f"{100 * numeric(item.get('detected_changes', {}).get('rate')):.1f}%",
-                html.escape(adherence_text),
-                "-" if embedding_mean is None else f"{embedding_mean:.4f}",
+            "<tr><th scope='row'>{}</th><td>{}</td><td>{}</td><td>{}</td><td>{}</td>"
+            "<td>{}</td></tr>".format(
+                esc(attribute), item.get("pairs", 0),
+                f"{100 * numeric(item.get('detected_changes', {}).get('rate')):.0f}%",
+                adherence_text,
+                "-" if cosine is None else f"{cosine:.3f}",
+                ratio,
             )
         )
     return (
-        "<table><thead><tr><th>Attribute</th><th>Matched pairs</th>"
-        "<th>Detected change</th><th>Example adherence</th>"
-        "<th>Mean paired cosine distance</th></tr></thead><tbody>"
-        + "".join(rows) + "</tbody></table>"
+        "<div class='table-wrap'><table><thead><tr><th>Changed attribute</th>"
+        "<th>Matched pairs</th><th>Detected value changed</th>"
+        "<th>Adherence per requested value</th><th>Mean paired cosine distance</th>"
+        "<th>Between ÷ within distance</th></tr></thead><tbody>"
+        + "".join(rows) + "</tbody></table></div>"
     )
 
 
 def render_chapter_six(data: dict[str, Any]) -> str:
     """Render metrics and plots from the precomputed chapter-6 artifact."""
     return f"""
-  <div class="eyebrow">Chapter 6</div>
-  <h2 id="chapter-6">Counterfactual analysis</h2>
-  <p class="subtitle">Counterfactual analysis investigates what changes
-    when one prompt attribute changes while the rest of the prompt remains fixed.
-    The features and metrics we will use are:</p>
-    <ul>
-      <li>Distribution of detected features: the distribution of attributes detected by the model in the generated images.</li>
-      <li>Embeddings: the image embeddings extracted from the generated images.</li>
-      <li>Detected change: the percentage of matched pairs where the detected categorical features changed.</li>
-      <li>Example adherence: the percentage of matched pairs where the generated images adhered to the intended attribute change.</li>
-      <li>Mean paired cosine distance: the mean cosine distance between the embeddings of matched pairs.</li>
-    </ul>
+  {chapter_header(6, "Counterfactual analysis",
+      "If only one word of the prompt changes, what else in the image changes?",
+      "<p>Chapter 5 compares groups of prompts that may differ in several ways. "
+      "Counterfactual analysis is more controlled: it pairs prompts that are identical "
+      "except for one attribute — e.g. “young white <strong>female</strong> doctor” vs "
+      "“young white <strong>male</strong> doctor” — and compares the two images. The "
+      "requested attribute <em>should</em> change. A fair model should leave everything "
+      "else (emotion, age, framing, objects, setting) unchanged; systematic changes in "
+      "unrelated properties show what the model bundles together with the attribute.</p>"
+      "<p>Pairs come from control prompts (gender, race, age and job all fixed) and from "
+      "double-variable prompts (two attributes fixed). Images in a pair are matched by "
+      "generation order, not by seed, so part of every difference is ordinary random "
+      "variation between two generations.</p>")}
+  {findings(chapter_six(data))}
+  {metric_defs([
+      ("Detected value changed", "Share of matched pairs in which the detector reports a "
+       "different value of the <em>changed</em> attribute for the two images.",
+       "Should be close to 100%: the prompt asked for a different value. Low values mean the "
+       "model ignored the change for at least one side."),
+      ("Adherence per requested value", "For each requested value, the share of paired "
+       "images where it was detected as requested.", "Unequal rates (e.g. one gender "
+       "followed far more often than the other) are an adherence disparity under matched "
+       "prompts."),
+      ("Paired cosine distance", "1 − cosine similarity between the CLIP embeddings of the "
+       "two images in a pair.", "How much the image changed overall. Compare attributes, "
+       "keeping in mind that some changes (job, workplace) should alter the scene a lot."),
+      ("Between ÷ within distance", "Mean Euclidean distance within matched pairs divided "
+       "by the mean distance between images that share the same requested value.",
+       "&lt; 1: changing the word moves the image less than the typical difference between "
+       "two images with the same value; &gt; 1: the attribute change dominates."),
+  ], open_=True)}
   <section id="chapter-6-overview">
     <h3>Overview</h3>
+    {guide(
+        read="One row per attribute that is changed between the two prompts of a pair.",
+        look=["Large adherence gaps between the values of one attribute: the model follows "
+              "the change in one direction more reliably than in the other.",
+              "Demographic attributes (gender, race, age) with a cosine distance close to "
+              "that of job or workplace: changing the person changes the whole scene, "
+              "not just the person."],
+        caution=[esc(data.get("caveat", "")),
+                 "An adherence of 0% for one value usually means that the requested label "
+                 "never matches the detector's label set (e.g. “hispanic” vs “latino "
+                 "hispanic”, or job names that the captions do not contain)."],
+    )}
     {_metrics_table(data)}
-    <p class="note">{html.escape(str(data.get("caveat", "")))}</p>
   </section>
   <section id="chapter-6-features">
     <h3>6.1 Counterfactual analysis from extracted features</h3>
     <p>Each matched pair holds two images whose prompts differ only in the changing
-    attribute. The stacked bars show, for every other detected attribute, the detected
-    categories before and after the change: if the bars differ, changing one attribute
-    also shifted attributes that were not asked to change.</p>
+    attribute. The stacked bars show, for every <em>other</em> detected attribute, the
+    detected categories before and after the change.</p>
+    {guide(
+        read="Select the attribute that changes, its before and after values, and the "
+             "values that stay fixed. Each pair of bars (before / after) counts the matched "
+             "pairs per detected category.",
+        look=["Bars that differ between before and after for an attribute that was "
+              "<em>not</em> changed: e.g. switching “female” to “male” also shifts detected "
+              "age or emotion. That is a bundled association, measured under matched "
+              "conditions.",
+              "The same shift recurring across many fixed-value combinations — a single "
+              "combination of 10 pairs is weak evidence on its own."],
+        caution="Detected categories also change between two generations of the same "
+                "prompt; small differences of one or two pairs are within random variation.",
+    )}
     <article class="plot-card">
       <h4>6.1.1 Detected value transitions in control prompts</h4>
       {_transition_selector(data.get("control_analysis", {}), prefix="chapterSixControl",
@@ -322,19 +405,43 @@ def render_chapter_six(data: dict[str, Any]) -> str:
       }
     </article>
     <article class="plot-card">
-      <h4>6.1.3 Aggregate detected category changes</h4>
+      <h4>6.1.3 How often the requested change is detected</h4>
+      <p class="note">Share of matched pairs in which the changed attribute is detected
+      with a different value in the two images. Ideally close to 100%.</p>
       {_bar_chart(data)}
     </article>
-    <p>The plots below show, for each numerical image feature, the distribution of
-    the paired difference (after minus before) for each changing attribute. A box
-    centred on zero means the change did not systematically affect that feature.</p>
+    <h4>6.1.4 Paired differences in numerical image features</h4>
+    {guide(
+        read="Each box is the distribution of (after − before) over all matched pairs for "
+             "one changed attribute; the dashed horizontal line is zero and the dashed line "
+             "inside each box is its mean.",
+        look="Boxes shifted clearly away from zero for demographic attributes: e.g. if "
+             "switching gender systematically changes the face area, one gender is framed "
+             "closer (portrait) and the other farther away (full body). Shifts for job or "
+             "workplace are expected, since they alter the scene.",
+        caution="The direction depends on which value is “before”: pairs are ordered "
+                "alphabetically by the changed value (e.g. female → male).",
+    )}
     {_numerical_plots(data)}
   </section>
   <section id="chapter-6-embeddings">
     <h3>6.2 Counterfactual analysis from embeddings</h3>
-    <p>Cosine distance measures semantic change between paired image embeddings.
-    Distances are descriptive and should not be interpreted as bias without
-    considering the intended attribute change.</p>
-    <article class="plot-card">{_embedding_plots(data)}</article>
+    <p>CLIP embeddings summarise the whole image, so they capture changes the detectors
+    miss (clothing, background, style, lighting).</p>
+    {guide(
+        read=["6.2.1: distribution of the cosine distance between the two images of each "
+              "pair, per changed attribute.",
+              "6.2.2: mean distance within matched pairs vs mean distance between images "
+              "that share the same requested value (a baseline for random variation)."],
+        look=["A demographic change whose between-pair distance approaches or exceeds the "
+              "within-condition baseline: the change moves the image as much as an entirely "
+              "new generation, i.e. much more than just the person.",
+              "Large differences between demographic attributes (e.g. changing race moves "
+              "images much more than changing gender)."],
+        caution="A larger distance is not automatically more bias: the requested attribute "
+                "itself must change part of the image. Embeddings cannot tell which part "
+                "changed; use 6.1 and chapter 8 to see what it was.",
+    )}
+    {_embedding_plots(data)}
   </section>
 """

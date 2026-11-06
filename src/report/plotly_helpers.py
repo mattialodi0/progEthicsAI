@@ -18,7 +18,7 @@ def chart(
     figure.update_layout(
         title=title,
         height=height,
-        margin={"l": 55, "r": 25, "t": 65, "b": 55},
+        margin={"l": 55, "r": 25, "t": 65 if title else 25, "b": 55},
         template="plotly_white",
         legend={"orientation": "h", "y": -0.2},
     )

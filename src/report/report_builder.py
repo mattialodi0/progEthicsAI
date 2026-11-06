@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import html
 import json
 from pathlib import Path
 from typing import Any
 import webbrowser
 
+from .insights import headline_indicators
+from .report_intro import render_reading_guide
 from .report_ch_1 import render_chapter_one
 from .report_ch_2 import render_chapter_two
 from .report_ch_3 import render_chapter_three
@@ -17,6 +20,255 @@ from .report_ch_5_4 import render_intersectional_analysis
 from .report_ch_6 import render_chapter_six
 from .report_ch_7 import render_chapter_seven
 from .report_ch_8 import render_chapter_eight
+
+
+# (anchor id, label, level) — level 0 is a chapter, 1 a section.
+_INDEX = (
+    ("report-title", "Fairness report", -1),
+    ("reading-guide", "How to read this report", -1),
+    ("chapter-1", "1. Executive summary", 0),
+    ("chapter-1-model", "Model and configuration", 1),
+    ("chapter-1-coverage", "Audit coverage", 1),
+    ("chapter-1-fairness", "Headline indicators", 1),
+    ("chapter-1-scope", "Scope and limitations", 1),
+    ("chapter-2", "2. Dataset and generation coverage", 0),
+    ("chapter-2-modes", "Prompt modes", 1),
+    ("chapter-2-attributes", "Prompt attributes", 1),
+    ("chapter-2-prompts", "Images per prompt", 1),
+    ("chapter-2-detections", "Detection rates", 1),
+    ("chapter-3", "3. Representation and diversity", 0),
+    ("chapter-3-distributions", "Demographic distributions", 1),
+    ("chapter-3-context", "Composition by job and workplace", 1),
+    ("chapter-3-diversity", "Diversity", 1),
+    ("chapter-4", "4. Prompt adherence", 0),
+    ("chapter-4-attributes", "Overall adherence", 1),
+    ("chapter-4-modes", "Prompt modes", 1),
+    ("chapter-4-demographics", "Demographic categories", 1),
+    ("chapter-4-combinations", "Attribute combinations", 1),
+    ("chapter-5", "5. Associations", 0),
+    ("chapter-5-overview", "Association overview", 1),
+    ("chapter-5-single-variable", "Single-variable associations", 1),
+    ("chapter-5-double-variable", "Double-variable associations", 1),
+    ("chapter-5-stereotypical", "Stereotypical item associations", 1),
+    ("chapter-5-intersectional", "Intersectional analysis", 1),
+    ("chapter-6", "6. Counterfactual analysis", 0),
+    ("chapter-6-overview", "Overview", 1),
+    ("chapter-6-features", "Feature counterfactuals", 1),
+    ("chapter-6-embeddings", "Embedding counterfactuals", 1),
+    ("chapter-7", "7. Visual features and embeddings", 0),
+    ("chapter-7-features", "Image-feature distributions", 1),
+    ("chapter-7-embeddings", "Embedding separability", 1),
+    ("chapter-8", "8. Caption and semantic associations", 0),
+    ("chapter-8-prompt", "Prompt-word associations", 1),
+    ("chapter-8-attributes", "Word-attribute associations", 1),
+    ("chapter-8-sentiment", "Description sentiment", 1),
+    ("chapter-8-diversity", "Vocabulary diversity", 1),
+    ("chapter-8-vocabulary", "Stopwords and vocabulary", 1),
+)
+
+_STYLE = """
+    :root { color-scheme: light;
+      --bg: #f4f6f8; --surface: #ffffff; --border: #d9e2ec; --text: #17202a;
+      --muted: #52606d; --accent: #2f5d8a; --accent-soft: #eaf1f8;
+      --read: #2f6fb0; --read-bg: #eef5fc; --look: #1d7a55; --look-bg: #ecf7f1;
+      --caution: #a35f00; --caution-bg: #fdf5e8; --finding: #6a4bb5; --finding-bg: #f3effb;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); margin: 0; line-height: 1.55; }
+    .report-layout { display: grid; gap: 2rem; grid-template-columns: 240px minmax(0, 1fr);
+      margin: 0 auto; max-width: 1360px; padding: 2rem 1rem 4rem; }
+    main { min-width: 0; }
+    .sidebar { align-self: start; position: sticky; top: 1rem; }
+    .sidebar nav { background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; box-shadow: 0 2px 5px #102a430d; padding: 1rem;
+      overflow-y: auto; max-height: 92vh; }
+    .sidebar-title { color: var(--muted); font-size: .75rem; font-weight: 700;
+      letter-spacing: .08em; text-transform: uppercase; margin-bottom: .4rem; }
+    .sidebar a { border-left: 3px solid transparent; color: #334e68; display: block;
+      font-size: .92rem; padding: .35rem .6rem; text-decoration: none; }
+    .sidebar a:hover, .sidebar a.active { background: #f0f4f8;
+      border-left-color: var(--accent); color: #102a43; }
+    .sidebar .supitem { font-weight: 700; margin-top: .35rem; }
+    .sidebar .subitem { font-size: .85rem; padding-left: 1.25rem; }
+    @media (max-width: 800px) { .report-layout { display: block; }
+      .sidebar { margin-bottom: 1rem; position: static; } .sidebar nav {
+        display: flex; gap: .25rem; overflow-x: auto; white-space: nowrap; }
+      .sidebar-title { display: none; } .sidebar .subitem { display: none; } }
+    .report-header { border-bottom: 1px solid var(--border); margin-bottom: 1.5rem;
+      padding-bottom: 1rem; }
+    .report-header h1 { font-size: 2.1rem; margin: 0 0 .25rem; }
+    .eyebrow { color: var(--muted); font-size: .8rem; font-weight: 700;
+      letter-spacing: .08em; margin-top: 3rem; text-transform: uppercase; }
+    h2 { font-size: 1.7rem; margin: .2rem 0 .6rem; }
+    h3 { font-size: 1.25rem; margin-top: 0; }
+    h4 { margin: .2rem 0 .5rem; }
+    p, li { max-width: 88ch; }
+    .subtitle { color: var(--muted); margin-top: 0; }
+    .question { background: var(--accent-soft); border-left: 4px solid var(--accent);
+      border-radius: 0 8px 8px 0; font-size: 1.05rem; font-weight: 600; margin: .5rem 0 1rem;
+      max-width: none; padding: .7rem 1rem; }
+    .question span { color: var(--accent); display: block; font-size: .72rem;
+      letter-spacing: .08em; text-transform: uppercase; }
+    .intro { margin-bottom: 1rem; }
+    .metrics { display: grid; gap: 1rem; grid-template-columns:
+      repeat(auto-fit, minmax(min(190px, 100%), 1fr)); margin: 1rem 0; }
+    .metric, section, details { background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; box-shadow: 0 2px 5px #102a430d; }
+    section { margin-top: 1.25rem; }
+    .metric { color: inherit; padding: 1rem; text-decoration: none; }
+    a.metric:hover { border-color: var(--accent); }
+    .metric-label { color: var(--muted); display: block; font-size: .85rem; }
+    .metric-value { display: block; font-size: 1.6rem; font-weight: 700; margin-top: .25rem; }
+    .metric-help { color: var(--muted); display: block; font-size: .8rem; margin-top: .35rem; }
+    section, details { padding: 1rem 1.25rem; }
+    details { margin-top: 1rem; } summary { cursor: pointer; font-weight: 700; }
+    pre { background: var(--bg); border-radius: 6px; overflow: auto; padding: 1rem; }
+    table { border-collapse: collapse; margin-top: 1rem; width: 100%; }
+    th, td { border-bottom: 1px solid var(--border); padding: .5rem; text-align: left;
+      vertical-align: top; }
+    th { color: var(--muted); font-size: .85rem; }
+    .table-wrap { overflow-x: auto; }
+    .bar { background: var(--border); border-radius: 99px; height: .55rem; min-width: 3rem;
+      overflow: hidden; }
+    .bar span { background: var(--accent); display: block; height: 100%; }
+    .bar.warn span { background: #c97a00; } .bar.bad span { background: #c0392b; }
+    .placeholder { border-left: 4px solid #829ab1; color: var(--muted); padding-left: 1rem; }
+    .note { color: var(--muted); font-size: .92rem; }
+    .checkbox-grid, .controls, .ch8-controls { align-items: flex-end; background: #f8fafc;
+      border: 1px solid var(--border); border-radius: 8px; display: flex; flex-wrap: wrap;
+      gap: .6rem 1.25rem; margin: .75rem 0; padding: .65rem .9rem; }
+    .checkbox-grid:empty { display: none; }
+    .checkbox-grid label, .controls label, .ch8-controls label { cursor: pointer; font-size: .92rem; }
+    .checkbox-grid select, .controls select, .ch8-controls select { display: block; font: inherit; margin-top: .2rem;
+      padding: .25rem .4rem; }
+    fieldset { border: 1px solid var(--border); border-radius: 6px; padding: .4rem .7rem; }
+    fieldset label { margin-right: .7rem; white-space: nowrap; }
+    legend { color: var(--muted); font-size: .8rem; font-weight: 700; }
+    .plot-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      margin-top: 1rem; min-width: 0; overflow: visible; padding: 1rem; }
+    .plot-card > div { min-width: 0; max-width: 100%; }
+    .plot-grid { display: grid; gap: 1rem; grid-template-columns:
+      repeat(auto-fit, minmax(min(340px, 100%), 1fr)); }
+    .plot-grid > .plot-card { margin-top: 0; }
+    @media (max-width: 700px) { .plot-grid { grid-template-columns: 1fr; } }
+    .guide { display: grid; gap: .8rem; grid-template-columns:
+      repeat(auto-fit, minmax(min(300px, 100%), 1fr)); margin: 1rem 0; }
+    .callout { border: 1px solid; border-left-width: 4px; border-radius: 8px;
+      font-size: .93rem; padding: .7rem 1rem; }
+    .callout p, .callout li { max-width: none; }
+    .callout ul { margin: .3rem 0 0; padding-left: 1.2rem; }
+    .callout li { margin-bottom: .3rem; }
+    .callout p { margin: .3rem 0 0; }
+    .callout-title { font-size: .75rem; font-weight: 800; letter-spacing: .07em;
+      text-transform: uppercase; }
+    .callout-read { background: var(--read-bg); border-color: var(--read); }
+    .callout-read .callout-title { color: var(--read); }
+    .callout-look { background: var(--look-bg); border-color: var(--look); }
+    .callout-look .callout-title { color: var(--look); }
+    .callout-caution { background: var(--caution-bg); border-color: var(--caution); }
+    .callout-caution .callout-title { color: var(--caution); }
+    .callout-finding { background: var(--finding-bg); border-color: var(--finding);
+      margin: 1rem 0; }
+    .callout-finding .callout-title { color: var(--finding); }
+    .callout-foot { color: var(--muted); font-size: .8rem; font-style: italic; }
+    details.defs { box-shadow: none; }
+    details.defs table th[scope=row] { color: var(--text); white-space: nowrap; }
+    details.defs td { font-size: .9rem; }
+    .glossary { display: grid; gap: .3rem 1rem; grid-template-columns: max-content 1fr; }
+    .glossary dt { font-weight: 700; } .glossary dd { margin: 0; font-size: .92rem; }
+    @media (max-width: 700px) { .glossary { grid-template-columns: 1fr; } }
+    .lens-grid { display: grid; gap: .8rem; grid-template-columns:
+      repeat(auto-fit, minmax(min(200px, 100%), 1fr)); margin: 1rem 0; }
+    .lens { background: var(--accent-soft); border-radius: 8px; color: inherit;
+      display: flex; flex-direction: column; gap: .3rem; padding: .8rem 1rem;
+      text-decoration: none; }
+    .lens:hover { outline: 2px solid var(--accent); }
+    .lens span { font-size: .92rem; } .lens em { color: var(--muted); font-size: .8rem; }
+    .questions li { margin-bottom: .35rem; }
+    .reading-guide { border-top: 4px solid var(--accent); }
+    .badge { border-radius: 99px; display: inline-block; font-size: .75rem; font-weight: 700;
+      padding: .05rem .5rem; }
+    .badge-neutral { background: #e4e7eb; color: #3e4c59; }
+    .badge-low { background: #e0ecf9; color: #1f4f82; }
+    .badge-mid { background: #fdebd0; color: #8a4b00; }
+    .badge-high { background: #f9d7d3; color: #9b2c1f; }
+    .stat-line { display: flex; flex-wrap: wrap; gap: .4rem 1rem; font-size: .9rem; }
+    .stat-line b { font-weight: 700; }
+    .pyplot-figure { background: #fff; display: block; height: auto; max-width: 100%; width: 100%; }
+    .chapter { margin: 20px 0; }
+"""
+
+# Applies one look to every chart: the Python-rendered figures and the ones
+# drawn by the chapter scripts. Layout values given by a chart win.
+_PLOTLY_DEFAULTS = """
+  (() => {
+    const colorway = ["#0072B2", "#E69F00", "#009E73", "#D55E00", "#CC79A7",
+      "#56B4E9", "#8C6D31", "#7F7F7F", "#332288", "#B8336A", "#44AA99", "#999933"];
+    const font = {family: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+      size: 12.5, color: "#243b53"};
+    const withDefaults = (layout) => {
+      const result = Object.assign({}, layout || {});
+      result.font = Object.assign({}, font, result.font || {});
+      result.colorway = result.colorway || colorway;
+      result.hoverlabel = Object.assign({font: {family: font.family}}, result.hoverlabel || {});
+      result.paper_bgcolor = result.paper_bgcolor || "#ffffff";
+      result.plot_bgcolor = result.plot_bgcolor || "#ffffff";
+      ["xaxis", "yaxis"].forEach((axis) => {
+        result[axis] = Object.assign({gridcolor: "#e6ebf0", zerolinecolor: "#bcccdc",
+          automargin: true}, result[axis] || {});
+      });
+      if (result.title && typeof result.title === "string") {
+        result.title = {text: result.title, x: 0, xanchor: "left", font: {size: 14}};
+      }
+      return result;
+    };
+    const config = (value) => Object.assign({responsive: true, displaylogo: false,
+      modeBarButtonsToRemove: ["lasso2d", "select2d"]}, value || {});
+    ["newPlot", "react"].forEach((name) => {
+      const original = Plotly[name];
+      Plotly[name] = (element, data, layout, options) =>
+        Array.isArray(data)
+          ? original.call(Plotly, element, data, withDefaults(layout), config(options))
+          : original.call(Plotly, element, data, layout, options);
+    });
+  })();
+"""
+
+_SCRIPT = """
+  // Highlight the sidebar entry of the section currently in view. Only
+  // elements that have a sidebar link are observed, so plot containers whose
+  // ids also start with "chapter-" cannot clear the highlight.
+  const sectionLinks = new Map(Array.from(
+    document.querySelectorAll("[data-section-link]")
+  ).map((link) => [link.dataset.sectionLink, link]));
+  const sectionObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        sectionLinks.forEach((link) => link.classList.remove("active"));
+        sectionLinks.get(entry.target.id)?.classList.add("active");
+      }
+    });
+  }, { rootMargin: "-15% 0px -70% 0px" });
+  sectionLinks.forEach((link, id) => {
+    const section = document.getElementById(id);
+    if (section) sectionObserver.observe(section);
+  });
+  // Charts drawn inside a closed <details> get a default width; resize them
+  // to their container when the block is opened.
+  document.addEventListener("toggle", (event) => {
+    if (event.target.open) {
+      event.target.querySelectorAll(".js-plotly-plot").forEach((plot) => Plotly.Plots.resize(plot));
+    }
+  }, true);
+"""
+
+
+def _sidebar() -> str:
+    classes = {-1: "", 0: "supitem", 1: "subitem"}
+    return "\n".join(
+        f'      <a class="{classes[level]}" href="#{anchor}" '
+        f'data-section-link="{anchor}">{html.escape(text)}</a>'
+        for anchor, text, level in _INDEX
+    )
 
 
 def build_report(
@@ -64,8 +316,9 @@ def build_report(
         raise ValueError("Each required report-data chapter must be a dictionary")
 
     bias_stats = report_data["chapter_5"]
+    summary = report_data["chapter_1"]
     chapters = [
-        render_chapter_one(report_data["chapter_1"]),
+        render_chapter_one(summary, headline_indicators(report_data)),
         render_chapter_two(report_data["chapter_2"]),
         render_chapter_three(report_data["chapter_3"]),
         render_chapter_four(report_data["chapter_4"]),
@@ -89,163 +342,42 @@ def build_report(
     if report_path.suffix.lower() != ".html":
         raise ValueError("report_filename must use the .html extension")
 
+    model = html.escape(str(summary.get("model_name", "Unknown model")))
+    subtitle = (
+        f"Text-to-image fairness audit of <strong>{model}</strong> · "
+        f"{html.escape(str(summary.get('generated_images', '?')))} images from "
+        f"{html.escape(str(summary.get('num_prompts', '?')))} prompts · "
+        f"audit date {html.escape(str(summary.get('audit_date', '?')))}"
+    )
     report_path.write_text(
         f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Fairness report</title>
+  <title>Fairness report – {model}</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-  <style>
-    :root {{ color-scheme: light; font-family: system-ui, sans-serif; }}
-    body {{ background: #f4f6f8; color: #17202a; margin: 0; }}
-    .report-layout {{ display: grid; gap: 2rem; grid-template-columns: 220px minmax(0, 1fr);
-      margin: 0 auto; max-width: 1320px; padding: 2rem 1rem 4rem; }}
-    main {{ min-width: 0; }}
-    .sidebar {{ align-self: start; position: sticky; top: 1rem; }}
-    .sidebar nav {{ background: white; border: 1px solid #d9e2ec; border-radius: 8px;
-      box-shadow: 0 2px 5px #102a430d; padding: 1rem; overflow-y: auto; max-height: 90vh; }}
-    .sidebar-title {{ color: #52606d; font-size: .8rem; font-weight: 700;
-      letter-spacing: .08em; text-transform: uppercase; }}
-    .sidebar a {{ border-left: 3px solid transparent; color: #334e68; display: block;
-      padding: .45rem .6rem; text-decoration: none; }}
-    .sidebar a:hover, .sidebar a.active {{ background: #f0f4f8;
-      border-left-color: #486581; color: #102a43; }}
-    .sidebar .supitem {{ font-weight: bold; }}
-    .sidebar .subitem {{ font-size: .9rem; padding-left: 1.25rem; }}
-    @media (max-width: 800px) {{ .report-layout {{ display: block; }}
-      .sidebar {{ margin-bottom: 1rem; position: static; }} .sidebar nav {{
-        display: flex; gap: .25rem; overflow-x: auto; white-space: nowrap; }}
-      .sidebar-title {{ display: none; }} .sidebar .subitem {{ display: none; }} }}
-    .eyebrow {{ color: #52606d; font-size: .8rem; font-weight: 700;
-      letter-spacing: .08em; text-transform: uppercase; }}
-    h1 {{ margin-bottom: .35rem; }} h2 {{ margin-top: 2rem; }}
-    .subtitle {{ color: #52606d; margin-top: 0; }}
-    .metrics {{ display: grid; gap: 1rem; grid-template-columns:
-      repeat(auto-fit, minmax(170px, 1fr)); }}
-    .metric, section, details {{ background: white; border: 1px solid #d9e2ec;
-      border-radius: 8px; box-shadow: 0 2px 5px #102a430d; }}
-    .metric {{ padding: 1rem; }} .metric-label {{ color: #52606d; display: block;
-      font-size: .9rem; }} .metric-value {{ display: block; font-size: 1.6rem;
-      margin-top: .35rem; }} section, details {{ padding: 1rem 1.25rem; }}
-    details {{ margin-top: 1rem; }} summary {{ cursor: pointer; font-weight: 700; }}
-    pre {{ background: #f4f6f8; border-radius: 6px; overflow: auto; padding: 1rem; }}
-    table {{ border-collapse: collapse; margin-top: 1rem; width: 100%; }}
-    th, td {{ border-bottom: 1px solid #d9e2ec; padding: .55rem; text-align: left; }}
-    th {{ color: #52606d; font-size: .85rem; }} .bar {{ background: #d9e2ec;
-      border-radius: 99px; height: .55rem; min-width: 3rem; overflow: hidden; }}
-    .bar span {{ background: #486581; display: block; height: 100%; }}
-    .conditioning-plot {{ display: grid; gap: .65rem; margin: 1rem 0; }}
-    .plot-row {{ align-items: center; display: grid; gap: .75rem;
-      grid-template-columns: minmax(110px, 1fr) 3fr auto; }}
-    .plot-label, .plot-value {{ font-size: .9rem; }} .plot-value {{ color: #52606d;
-      min-width: 90px; text-align: right; }} .plot-track {{ background: #d9e2ec;
-      border-radius: 99px; height: .7rem; overflow: hidden; }}
-    .plot-track span {{ background: #486581; display: block; height: 100%; }}
-    .placeholder {{ border-left: 4px solid #829ab1; color: #52606d; padding-left: 1rem; }}
-    .note {{ color: #52606d; font-size: .95rem; }}
-    .checkbox-grid {{ display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; }}
-    .checkbox-grid label {{ cursor: pointer; }}
-    .plot-card {{ background: #fff; border: 1px solid #d9e2ec; border-radius: 8px;
-      margin-top: 1rem; min-width: 0; overflow: visible; padding: 1rem; }}
-    .plot-card > div {{ min-width: 0; max-width: 100%; }}
-    .pyplot-figure {{ background: #fff; display: block; height: auto; max-width: 100%;
-      width: 100%; }}
-    .plot-grid {{ display: grid; gap: 1rem; grid-template-columns:
-      repeat(auto-fit, minmax(320px, 1fr)); }}
-    .chapter-3-mode-group {{ margin-top: 1rem; }}
-    .chapter-3-mode-group > .plot-card {{ margin-top: 0; }}
-    #chapter-3-diversity-scores > .plot-card {{ margin-top: 1rem; }}
-    @media (max-width: 700px) {{
-      .plot-grid {{ grid-template-columns: 1fr; }}
-    }}
-    .svg-figure {{ margin: .75rem 0; min-width: 0; }}
-    .svg-figure svg {{ background: #f8fafc; border: 1px solid #d9e2ec;
-      border-radius: 6px; display: block; max-width: 100%; min-height: 80px;
-      width: 100%; }}
-    .svg-label {{ fill: #243b53; font-size: 13px; }}
-    .svg-value {{ fill: #243b53; font-size: 12px; }}
-    .plot-legend {{ display: inline-block; font-size: .82rem; margin: .35rem .75rem 0 0; }}
-    .plot-legend i {{ border-radius: 2px; display: inline-block; height: .75rem;
-      margin-right: .3rem; vertical-align: -.1rem; width: .75rem; }}
-    .pie-layout {{ align-items: center; display: flex; flex-wrap: wrap; gap: 1.25rem; }}
-    .pie-chart {{ border: 1px solid #d9e2ec; border-radius: 50%; flex: 0 0 190px;
-      height: 190px; width: 190px; }}
-    .chapter {{ margin: 20px }}
-  </style>
+  <script>{_PLOTLY_DEFAULTS}</script>
+  <style>{_STYLE}</style>
 </head>
 <body>
 <div class="report-layout">
   <aside class="sidebar" aria-label="Report index">
     <nav>
       <div class="sidebar-title">Report index</div>
-      <a href="#report-title" data-section-link="report-title">Fairness report</a>
-      <a class="supitem" href="#chapter-1" data-section-link="chapter-1">1. Executive summary</a>
-      <a class="subitem" href="#chapter-1-model" data-section-link="chapter-1-model">Model and configuration</a>
-      <a class="subitem" href="#chapter-1-coverage" data-section-link="chapter-1-coverage">Audit coverage</a>
-      <a class="subitem" href="#chapter-1-fairness" data-section-link="chapter-1-fairness">Fairness overview</a>
-      <a class="subitem" href="#chapter-1-scope" data-section-link="chapter-1-scope">Scope and limitations</a>
-      <a class="supitem" href="#chapter-2" data-section-link="chapter-2">2. Dataset and generation coverage</a>
-      <a class="subitem" href="#chapter-2-modes" data-section-link="chapter-2-modes">Prompt modes</a>
-      <a class="subitem" href="#chapter-2-attributes" data-section-link="chapter-2-attributes">Prompt attributes</a>
-      <a class="subitem" href="#chapter-2-prompts" data-section-link="chapter-2-prompts">Images per prompt</a>
-      <a class="subitem" href="#chapter-2-detections" data-section-link="chapter-2-detections">Detection rates</a>
-      <a class="supitem" href="#chapter-3" data-section-link="chapter-3">3. Demographic representation and diversity</a>
-      <a class="subitem" href="#chapter-3-controls" data-section-link="chapter-3-controls">Prompt modes</a>
-      <a class="subitem" href="#chapter-3-distributions" data-section-link="chapter-3-distributions">Demographic distributions</a>
-      <a class="subitem" href="#chapter-3-diversity" data-section-link="chapter-3-diversity">Diversity</a>
-      <a class="supitem" href="#chapter-4" data-section-link="chapter-4">4. Prompt adherence</a>
-      <a class="subitem" href="#chapter-4-attributes" data-section-link="chapter-4-attributes">Overall adherence</a>
-      <a class="subitem" href="#chapter-4-modes" data-section-link="chapter-4-modes">Prompt modes</a>
-      <a class="subitem" href="#chapter-4-demographics" data-section-link="chapter-4-demographics">Demographic categories</a>
-      <a class="subitem" href="#chapter-4-combinations" data-section-link="chapter-4-combinations">Attribute combinations</a>
-      <a class="supitem" href="#chapter-5" data-section-link="chapter-5">5. Conditional distributions and Association analysis</a>
-      <a class="subitem" href="#chapter-5-single-variable" data-section-link="chapter-5-single-variable">Single-variable associations</a>
-      <a class="subitem" href="#chapter-5-double-variable" data-section-link="chapter-5-double-variable">Double-variable associations</a>
-      <a class="subitem" href="#chapter-5-stereotypical" data-section-link="chapter-5-stereotypical">Stereotypical item associations</a>
-      <a class="subitem" href="#chapter-5-intersectional" data-section-link="chapter-5-intersectional">Intersectional analysis</a>
-      <a class="supitem" href="#chapter-6" data-section-link="chapter-6">6. Counterfactual analysis</a>
-      <a class="subitem" href="#chapter-6-overview" data-section-link="chapter-6-overview">Overview</a>
-      <a class="subitem" href="#chapter-6-features" data-section-link="chapter-6-features">Feature counterfactuals</a>
-      <a class="subitem" href="#chapter-6-embeddings" data-section-link="chapter-6-embeddings">Embedding counterfactuals</a>
-      <a class="supitem" href="#chapter-7" data-section-link="chapter-7">7. Visual feature and embedding analysis</a>
-      <a class="subitem" href="#chapter-7-features" data-section-link="chapter-7-features">Image-feature distributions</a>
-      <a class="subitem" href="#chapter-7-embeddings" data-section-link="chapter-7-embeddings">Embedding separability</a>
-      <a class="supitem" href="#chapter-8" data-section-link="chapter-8">8. Caption and semantic associations</a>
-      <a class="subitem" href="#chapter-8-prompt" data-section-link="chapter-8-prompt">Prompt-word associations</a>
-      <a class="subitem" href="#chapter-8-attributes" data-section-link="chapter-8-attributes">Word-attribute associations</a>
-      <a class="subitem" href="#chapter-8-sentiment" data-section-link="chapter-8-sentiment">Description sentiment</a>
-      <a class="subitem" href="#chapter-8-diversity" data-section-link="chapter-8-diversity">Vocabulary diversity</a>
-      <a class="subitem" href="#chapter-8-vocabulary" data-section-link="chapter-8-vocabulary">Stopwords and vocabulary</a>
+{_sidebar()}
     </nav>
   </aside>
   <main>
-    <h1 id="report-title">Fairness report</h1>
-    <p class="subtitle">Interactive audit report</p>
+    <header class="report-header">
+      <h1 id="report-title">Fairness report</h1>
+      <p class="subtitle">{subtitle}</p>
+    </header>
+    {render_reading_guide()}
     {chapters_html}
   </main>
 </div>
-<script>
-  // Highlight the sidebar entry of the section currently in view. Only
-  // elements that have a sidebar link are observed, so plot containers whose
-  // ids also start with "chapter-" cannot clear the highlight.
-  const sectionLinks = new Map(Array.from(
-    document.querySelectorAll("[data-section-link]")
-  ).map((link) => [link.dataset.sectionLink, link]));
-  const sectionObserver = new IntersectionObserver((entries) => {{
-    entries.forEach((entry) => {{
-      if (entry.isIntersecting) {{
-        sectionLinks.forEach((link) => link.classList.remove("active"));
-        sectionLinks.get(entry.target.id)?.classList.add("active");
-      }}
-    }});
-  }}, {{ rootMargin: "-15% 0px -70% 0px" }});
-  sectionLinks.forEach((link, id) => {{
-    const section = document.getElementById(id);
-    if (section) sectionObserver.observe(section);
-  }});
-</script>
+<script>{_SCRIPT}</script>
 </body>
 </html>
 """,

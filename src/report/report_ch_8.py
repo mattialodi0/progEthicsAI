@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from .explain import chapter_header, findings, guide
+from .insights import chapter_eight
+
 
 def render_chapter_eight(chapter_data: dict[str, Any]) -> str:
     """Render precomputed caption word associations, sentiment and diversity."""
@@ -24,9 +27,16 @@ def render_chapter_eight(chapter_data: dict[str, Any]) -> str:
     .ch8-table-wrap td.ch8-words {{ white-space: normal; min-width: 160px; }}
     .ch8-wordlist {{ font-size: .9rem; line-height: 1.6; overflow-wrap: anywhere; }}
   </style>
-  <div class="eyebrow">Chapter 8</div>
-  <h2 id="chapter-8">Caption and semantic association analysis</h2>
-  <p class="subtitle">Captions are tokenized and part-of-speech tagged with NLTK.
+  {chapter_header(8, "Caption and semantic association analysis",
+      "How are different groups <em>described</em>: which words, which tone, how much "
+      "variety?",
+      "<p>Each image was described by an automatic captioning model. Captions capture "
+      "content that no structured detector measures — clothing, activities, settings, "
+      "expressions, mood — so they can reveal stereotyped depictions that chapters 3–7 "
+      "miss. The approach is the same as before: compare the descriptions of different "
+      "prompt groups and look for systematic differences.</p>")}
+  {findings(chapter_eight(chapter_data))}
+  <p>Captions are tokenized and part-of-speech tagged with NLTK.
   Stopwords are removed and the remaining descriptive words are lemmatized and
   split into three categories: <strong>adjectives</strong>,
   <strong>verbs / actions</strong> and <strong>names / objects</strong> (nouns).
@@ -43,6 +53,21 @@ def render_chapter_eight(chapter_data: dict[str, Any]) -> str:
     that variable (each value is one document), so a term scores high when it
     is frequent for one value and uncommon for the others. Words used for every
     value score zero and are never shown.</p>
+    {guide(
+        read="One card per value of the selected prompt variable, with its most "
+             "distinctive adjectives, verbs and nouns. Hover a word for its TF-IDF score "
+             "and number of occurrences.",
+        look=["Words that describe the person rather than what the prompt asked for: "
+              "appearance (“beautiful”, “muscular”), clothing (“hijab”, “suit”), "
+              "condition (“dirty”, “poor”), or role (“assistant”) that appear for some "
+              "groups only.",
+              "For non-demographic variables (jobs, traits, continents): words that encode "
+              "a demographic (“woman”, “bearded”, “turban”) or a stereotyped setting.",
+              "Negative or loaded vocabulary concentrated in some groups."],
+        caution="TF-IDF favours words that are unique to one value, including harmless "
+                "ones (a stethoscope for a doctor). A word must be unexpected given the "
+                "prompt to count as a stereotype; check its frequency, not only its score.",
+    )}
     <div class="ch8-controls">
       <label>Prompt variable <select id="chapter-8-prompt-select"></select></label>
     </div>
@@ -54,6 +79,16 @@ def render_chapter_eight(chapter_data: dict[str, Any]) -> str:
     <p>Detected groups are compared within each prompt-variable value. Select a
     prompt variable to account for its composition before comparing detected
     gender, race, age, or emotion groups.</p>
+    {guide(
+        read="Cards compare images with the same prompt value but a different detected "
+             "attribute, e.g. doctors detected as female vs doctors detected as male.",
+        look="Different vocabulary for detected groups under the same prompt: the model "
+             "(or the captioner) describes, e.g., female doctors with appearance words and "
+             "male doctors with activity words.",
+        caution="Both the detected attribute and the caption are model outputs, and the "
+                "captioner can introduce its own bias. Groups with few images produce "
+                "unstable word lists.",
+    )}
     <div class="ch8-controls">
       <label>Prompt variable <select id="chapter-8-conditioning-select"></select></label>
       <label>Detected attribute <select id="chapter-8-detected-select"></select></label>
@@ -71,6 +106,17 @@ def render_chapter_eight(chapter_data: dict[str, Any]) -> str:
     VADER was built for general English, so neutral descriptive words such as
     most clothing and objects carry no sentiment, and words such as
     <em>smiling</em> or <em>serious</em> dominate the score.</p>
+    {guide(
+        read="Dots are mean sentiment per group with a 95% confidence interval; the "
+             "horizontal line is 0 (neutral). The table lists the words driving the score.",
+        look=["Groups whose intervals do not overlap: their images are described in a "
+              "systematically more positive or negative tone.",
+              "Tone differences for demographic attributes (gender, race, age, continent) "
+              "matter more than for emotion or status prompts, where a difference is "
+              "requested (a “sad person” should read as sad)."],
+        caution="Sentiment comes from a general-purpose lexicon applied to short captions; "
+                "it reflects word choice, not a judgement of the image.",
+    )}
     <details><summary>Words treated as neutral (<span id="chapter-8-neutral-count"></span>)</summary>
       <p class="note">VADER scores these words through a sense they do not have in
       image captions (<em>grey</em> hair, tank <em>top</em>, <em>loose</em> waves,
@@ -97,6 +143,12 @@ def render_chapter_eight(chapter_data: dict[str, Any]) -> str:
     different sizes. <strong>Simpson diversity</strong> is the probability that two
     randomly drawn words differ. The raw type-token ratio is listed for reference
     but falls as groups grow, so compare it only between groups of similar size.</p>
+    {guide(
+        read="Grouped bars: one colour per word category, one group per attribute value.",
+        look="Groups with clearly lower vocabulary diversity are described in a more "
+             "repetitive, formulaic way — the textual counterpart of the low visual "
+             "diversity in chapter 3.2.",
+    )}
     <div class="ch8-controls">
       <label>Attribute <select id="chapter-8-diversity-attribute"></select></label>
       <label>Measure <select id="chapter-8-diversity-metric">
@@ -111,6 +163,8 @@ def render_chapter_eight(chapter_data: dict[str, Any]) -> str:
 
   <section id="chapter-8-vocabulary" aria-labelledby="chapter-8-vocabulary-heading">
     <h3 id="chapter-8-vocabulary-heading">8.5 Stopwords and caption vocabulary</h3>
+    <p class="note">Documentation of the text preprocessing, for reproducibility: which
+    words were removed before the analyses above and the full vocabulary that remained.</p>
     <p id="chapter-8-stopword-summary"></p>
     <div class="plot-card"><div id="chapter-8-stopword-plot"></div></div>
     <details><summary>Captioning stopwords (<span id="chapter-8-domain-count"></span>)</summary>
