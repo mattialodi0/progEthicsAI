@@ -1,81 +1,156 @@
-# A framework to measure fairness for text-to-image generative models
+# Ethics in AI project: measuring fairness in text-to-image models
 
-## Overview
-The code in this repository helps to analyze the fairness of any Text-to-Image model.
-The process is composed of the following phases:
-1) prompts genereation
-2) images generation
-3) features extraction
-4) feature analysis
-5) report generation
-Once they are over, the final result will be a report containing informations, evaluations, conclusions about the model fairness.
+A framework to audit the fairness of any text-to-image (T2I) generative model. It generates
+a controlled set of prompts, renders them with the model under test, extracts demographic and
+semantic features from the images, analyzes them statistically and produces an interactive
+HTML report on representation, bias and stereotypes.
 
-## Prompts generation
-## Images generation
-## Features extraction
+The report keeps representation, prompt adherence, associations and counterfactual comparisons
+separate on purpose: they measure different aspects of fairness and are not collapsed into a
+single score.
 
-Prompt generation is cheap (CPU); generation and extraction are the compute-heavy steps
-(GPU). Clone the repo in a Colab runtime and run them there; only the resulting folder is
-needed locally.
+## Pipeline
+
+```
+prompts  ->  images  ->  features  ->  analysis  ->  report
+ (CPU)       (GPU)       (GPU)         (CPU)         (CPU)
+```
+
+| # | Phase | Module | Input | Output |
+|---|-------|--------|-------|--------|
+| 1 | Prompt generation | `src/generation/prompt_generator.py` | variable lists in the file | `assets/*_prompts.txt` |
+| 2 | Image generation | `src/generation/generate_images.py` | prompt files | `<run>/images/`, `generation_metadata.jsonl`, `config.json` |
+| 3 | Feature extraction | `src/extraction/extract_features.py` | a run folder | `<run>/all_metadata.json.gz` |
+| 4 | Analysis | `src/analysis/analyzer.py` | metadata + config | `<run>/analysis.json` |
+| 5 | Report | `src/report/report_builder.py` | `analysis.json` | `<run>/report/` (HTML) |
+
+Image generation and feature extraction are compute-heavy, so run steps 1-3 in a Colab GPU
+runtime (ready-made notebooks are in `notebooks/`) and copy the run folder locally for steps 4-5.
+
+## Repository layout
+
+```
+assets/               generated prompt files (git-ignored, regenerate with step 1)
+notebooks/            Colab notebooks: imge_generation, feature_extraction, feature_analysis
+src/
+  run_config.py       shared config.json handling (atomic, resumable, preserves manual keys)
+  generation/         prompt_generator.py, generate_images.py
+  extraction/         extract_features.py
+  analysis/           analyzer.py + chapters.py and the statistics modules
+                      (coverage, bias, counterfactual, prompt adherence, embeddings,
+                       visual features, synthesis, preprocessing, ...)
+  report/             report_builder.py, one report_ch_*.py per chapter, insights/explain texts
+                      readme.md: design notes for the report structure
+requirements.txt          local analysis / report dependencies
+requirements-colab.txt    heavy GPU dependencies for steps 2-3
+```
+
+## Installation
+
+Local (analysis and report):
+
+```bash
+pip install -r requirements.txt
+```
+
+Colab / GPU (generation and extraction):
 
 ```bash
 !git clone <repo-url> && cd progEthics && pip install -r requirements-colab.txt
-# 0) prompts (skip to reuse the files already in assets/)
-!python -m src.generation.prompt_generator --mode 0 --dest assets   # control_prompts.txt
-!python -m src.generation.prompt_generator --mode 1 --dest assets   # single_var_prompts.txt
-!python -m src.generation.prompt_generator --mode 2 --dest assets   # double_var_prompts.txt
-RUN=/content/drive/MyDrive/ethics/PixArtSigma
-!python -m src.generation.generate_images --model pixart-sigma --out $RUN   # images + metadata
-!python -m src.extraction.extract_features --run $RUN                       # -> all_metadata.json.gz
 ```
 
-- `src/generation/prompt_generator.py` builds the prompts of one mode (0 = control, 1 = single
-  variable, 2 = double variable) from the variable lists at the top of the file, one prompt per
-  line, repeated for the number of images wanted. Edit those lists to change the audited
-  jobs, races, etc. before generating.
-- `src/generation/generate_images.py` reads the prompt files (`assets/*_prompts.txt`, one
-  per prompt mode) and writes `images/` and `generation_metadata.jsonl`. It is an *example*
-  adapter: to audit another model add an entry to `MODELS` or pass `--model module:Class`
-  (subclass of `ImageGenerator`); nothing else in the pipeline changes.
-- `src/extraction/extract_features.py` runs independent stages (`image_metrics`, `faces`
-  [DeepFace], `florence` [caption + objects], `clip` [embeddings], `yolo` [objects]) and merges
-  them into a single `all_metadata.json.gz`. Choose stages with `--stages`.
-- Both steps are resumable (re-run the same command after a disconnect) and keep
-  `<run>/config.json` up to date (model, generation settings, stage status and counters,
-  extraction models, environment). The analysis and report read that same file.
+`transformers` is pinned to 4.49.0 because the Florence-2 remote code breaks on newer versions.
 
-Locally, once `<run>/all_metadata.json.gz` exists:
+## Usage
 
-Copy the run folder locally (keep its `images/` folder next to `all_metadata.json.gz` to get
-image thumbnails in the qualitative examples of chapter 8).
+All commands are run from the repository root. `<run>` is the folder holding one audit run
+(one model, one set of prompts).
 
-```powershell
+### 1. Prompt generation
+
+Writes one prompt file per mode, one prompt per line, each repeated for the number of images wanted.
+
+```bash
+python -m src.generation.prompt_generator --mode 0 --dest assets   # control_prompts.txt
+python -m src.generation.prompt_generator --mode 1 --dest assets   # single_var_prompts.txt
+python -m src.generation.prompt_generator --mode 2 --dest assets   # double_var_prompts.txt
+```
+
+| Mode | Prompts | Purpose |
+|------|---------|---------|
+| 0 | control: all variables specified | check the accuracy of the face-attribute extractor |
+| 1 | single variable (job, workplace, age, gender, race, emotion, continent, status, toxic / positive trait) | base distributions and primary biases |
+| 2 | double variable (e.g. gender x job, race x job, age x gender) | intersectional bias and counterfactual comparisons |
+
+The audited vocabularies (jobs, races, ages, emotions, ...) are the lists at the top of
+`prompt_generator.py`. Edit them before generating to change what is audited. Options:
+`--mode/-m`, `--dest/-d`, `--filename/-f`.
+
+### 2. Image generation
+
+```bash
+python -m src.generation.generate_images --model pixart-sigma --out <run>
+python -m src.generation.generate_images --list-models
+```
+
+Built-in models: `sd15`, `pixart-sigma`, `flux-schnell`. To audit another model add an entry
+to `MODELS`, or pass `--model package.module:Class` (a subclass of `ImageGenerator`); nothing
+else in the pipeline changes.
+
+Other options: `--prompts MODE=PATH` (repeatable, defaults to `assets/*_prompts.txt`),
+`--seed` (image *i* uses `seed + i`), `--batch-size`, `--limit N` (smoke test).
+
+### 3. Feature extraction
+
+```bash
+python -m src.extraction.extract_features --run <run>
+python -m src.extraction.extract_features --run <run> --stages faces clip
+python -m src.extraction.extract_features --run <run> --merge-only
+```
+
+Independent stages, merged into `all_metadata.json.gz`:
+
+| Stage | Model | Features |
+|-------|-------|----------|
+| `image_metrics` | none | brightness, saturation, contrast |
+| `faces` | DeepFace | perceived age, gender, race, emotion per face |
+| `florence` | Florence-2 | detailed caption, open-vocabulary objects |
+| `clip` | CLIP | normalized image and prompt embeddings |
+| `yolo` | YOLO11-nano | COCO objects, number of people |
+
+Steps 2 and 3 are resumable: re-run the same command after a disconnect. Both keep
+`<run>/config.json` up to date (model, generation settings, stage status and counters,
+extraction models, environment), and the analysis and report read that same file.
+
+### 4. Analysis
+
+Copy the run folder locally. Keep its `images/` folder next to `all_metadata.json.gz` to get
+image thumbnails in the qualitative examples of chapter 8.
+
+```bash
 python -m src.analysis.analyzer --config <run>/config.json --data <run>/all_metadata.json.gz --output <run>/analysis.json
-```
-## Feature Analysis and reporting
-
-Analysis and HTML rendering are separate steps. The analysis step reads the
-metadata, performs preprocessing and feature statistics, and writes a
-versioned JSON artifact. The report step reads only that artifact, so it does
-not reload the dataset or repeat expensive analysis.
-
-From the repository root:
-
-```powershell
-python -m src.analysis.analyzer                  # build the data for every chapter
-python -m src.analysis.analyzer --chapters 3 7   # rebuild only chapters 3 and 7
-python -m src.analysis.analyzer --list           # when each chapter was last built
-python -m src.report.report_builder assets/analysis.json --no-wait
+python -m src.analysis.analyzer --chapters 3 7    # rebuild only chapters 3 and 7
+python -m src.analysis.analyzer --list            # when each chapter was last built
 ```
 
-Each report chapter has its own data builder (`src/analysis/chapters.py`), so
-after the first full run you can rebuild just the chapters you are working on.
-The others are kept from the existing artifact. A chapter missing from the
-artifact is always built. If you change the config or the dataset, the
-analyzer warns about kept chapters that were built from a different one.
-`--config`, `--data` and `--output` override the default `assets/` paths.
+The analyzer preprocesses the metadata, computes the statistics and writes a versioned JSON
+artifact. Each chapter has its own builder (`src/analysis/chapters.py`), so after the first full
+run you can rebuild only the chapters you are working on; the others are kept from the existing
+artifact, and a missing chapter is always built. If the config or dataset changed, the analyzer
+warns about kept chapters built from a different one. Chapter 9 is derived from the other
+chapters and is rebuilt on every run. Without arguments the paths default to
+`assets/config.json`, `assets/all_metadata.json.gz` and `assets/analysis.json`.
 
-For library or notebook use:
+### 5. Report
+
+```bash
+python -m src.report.report_builder -i <run>/analysis.json --output-dir <run>/report --no-wait
+```
+
+The report step reads only the analysis artifact, so it never reloads the dataset or repeats
+expensive analysis. Options: `--input/-i`, `--output-dir/-o`, `--no-open`, `--no-wait`.
+
+### From Python / notebooks
 
 ```python
 from src.analysis.analyzer import save_analysis
@@ -86,37 +161,42 @@ artifact_path = save_analysis(data, config, "assets/analysis.json", chapters=[5,
 report_path = build_report(artifact_path, open_report=True, wait_for_close=True)
 ```
 
-Features we can measure automatically:
-- race: DeepFace
-- gender: DeepFace
-- demographic: DeepFace 
-- emotion: DeepFace
-- caption: Florence-2
-- items: Florence-2
-- feature vector: CLIP
+## What is measured
 
-Biases we are interested in reporting:
-- race
-- gender
-- demographic
-- culture
-- socioeconomic
-- actractiveness
-- emotion
+Features extracted automatically:
 
+- **Race, gender, age, emotion** of the depicted people: DeepFace
+- **Caption and objects**: Florence-2
+- **Image / prompt embeddings**: CLIP
+- **People count and COCO objects**: YOLO
+- **Low-level image properties**: brightness, saturation, contrast
 
-### Report
+Bias dimensions analyzed (conditional distributions such as P(gender | job)):
 
-1. Executive summary - The most important findings, disparities, and caveats.
-2. Dataset and generation coverage - Prompt design, sample sizes, demographic coverage, and data quality.
-3. Representation and diversity - Who appears in the generated images and how varied the outputs are.
-4. Prompt adherence - Whether generated images match the requested attributes.
-5. Conditional and intersectional bias - How attributes and demographic combinations affect outcomes.
-6. Counterfactual fairness - What changes when one prompt attribute is changed while others remain fixed.
-7. Visual feature and embedding analysis - Differences in measurable image properties and semantic representation.
-8. Caption and semantic association analysis - What image descriptions reveal about recurring attributes, objects, and contexts.
-9. Cross-analysis and key findings - Combine evidence from multiple measurements to identify robust patterns.
-0. Methodology, limitations, and appendix - Definitions, uncertainty, robustness checks, and reproducibility.
+- gender, racial, age and emotional bias, conditioned on prompt attributes
+- prompt adherence: whether the requested gender, age and race are the ones detected
+- toxic, positive and attractiveness stereotypes from captions
+- object and item associations
+- counterfactual fairness: what changes when a single prompt attribute is swapped
 
+## The report
 
+1. **Executive summary**: the most important findings, disparities and caveats.
+2. **Dataset and generation coverage**: prompt design, sample sizes, demographic coverage, data quality.
+3. **Representation and diversity**: who appears in the images and how varied the outputs are.
+4. **Prompt adherence**: whether images match the requested attributes.
+5. **Conditional and intersectional bias**: how attributes and demographic combinations affect outcomes.
+6. **Counterfactual fairness**: what changes when one prompt attribute changes and the others stay fixed.
+7. **Visual feature and embedding analysis**: differences in image properties and semantic representation.
+8. **Caption and semantic association analysis**: recurring attributes, objects and contexts in descriptions.
+9. **Cross-analysis and key findings**: evidence combined across measurements to identify robust patterns.
+10. **Methodology, limitations and appendix**: definitions, uncertainty, robustness, reproducibility.
 
+The design rationale for each chapter is in [src/report/readme.md](src/report/readme.md).
+
+## Limitations
+
+Demographic labels are *perceived* attributes predicted by automatic models (DeepFace, Florence-2,
+CLIP) that have their own errors and biases. The control prompts (mode 0) exist to estimate this
+extractor error; interpret group gaps with it in mind. Results describe the audited model under
+the chosen prompts, vocabularies and seeds, and do not generalize beyond them.

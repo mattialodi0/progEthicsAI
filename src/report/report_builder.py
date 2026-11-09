@@ -294,6 +294,7 @@ def build_report(
     *,
     open_report: bool = True,
     wait_for_close: bool = True,
+    output_dir: str | Path | None = None,
 ) -> Path:
     """Render a previously saved analysis artifact.
 
@@ -361,7 +362,9 @@ def build_report(
         f'<div class="chapter">{chapter}</div>' for chapter in chapters
     )
 
-    output_dir = Path(config.get("report_dir", "assets/report"))
+    if output_dir is None:
+        output_dir = config.get("report_dir", "assets/report")
+    output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     filename = config.get("report_filename", "fairness_report.html")
     if not isinstance(filename, str) or Path(filename).name != filename:
@@ -427,7 +430,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Render a fairness report from a saved analysis artifact."
     )
-    parser.add_argument("analysis_artifact", help="Path to the analysis JSON file")
+    parser.add_argument(
+        "--input", "-i", default="assets/analysis.json",
+        help="Path to the analysis JSON file (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--output-dir", "-o", default=None,
+        help="Folder the report is written to (default: report_dir from the "
+             "analysis config, else assets/report)",
+    )
     parser.add_argument("--no-open", action="store_true", help="Do not open the report")
     parser.add_argument(
         "--no-wait",
@@ -436,7 +447,8 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     build_report(
-        args.analysis_artifact,
+        args.input,
+        output_dir=args.output_dir,
         open_report=not args.no_open,
         wait_for_close=not args.no_wait,
     )
