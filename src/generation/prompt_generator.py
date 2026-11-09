@@ -215,13 +215,18 @@ def main():
                         help="Mode (0 = control, 1 = single, 2 = double, 3 = triple, -1 = full)")
     parser.add_argument("--dest", "-d", default="./",
                         help="Destination folder for output txt")
+    parser.add_argument("--filename", "-f", default=None,
+                        help="Output file name (default: control_prompts.txt, single_var_prompts.txt, "
+                             "double_var_prompts.txt for modes 0, 1, 2; prompts.txt otherwise).")
     args = parser.parse_args()
 
     if args.mode not in [-1, 0, 1, 2, 3]:
         raise SystemExit("Only mode -1,0,1,2,3 are supported currently.")
 
     prompts = make_prompts(mode=args.mode)
-    out_path = write_prompts(prompts, args.dest)
+    default_names = {0: "control_prompts.txt", 1: "single_var_prompts.txt",
+                     2: "double_var_prompts.txt"}
+    out_path = write_prompts(prompts, args.dest, args.filename or default_names.get(args.mode, "prompts.txt"))
     print(out_path)
 
 

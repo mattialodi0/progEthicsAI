@@ -1,0 +1,12 @@
+# Heavy steps (image generation + feature extraction), meant for a Colab GPU runtime.
+# Colab already provides torch, numpy and pillow.
+diffusers
+transformers==4.49.0   # pinned: Florence-2 remote code breaks on newer versions
+accelerate
+sentencepiece
+protobuf
+timm
+einops
+open_clip_torch
+ultralytics
+deepface

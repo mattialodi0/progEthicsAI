@@ -8,11 +8,50 @@ The process is composed of the following phases:
 3) features extraction
 4) feature analysis
 5) report generation
-Onxe they are over, the final result will be a report containing informations, evaluations, conclusions about the model fairness.
+Once they are over, the final result will be a report containing informations, evaluations, conclusions about the model fairness.
 
 ## Prompts generation
 ## Images generation
 ## Features extraction
+
+Prompt generation is cheap (CPU); generation and extraction are the compute-heavy steps
+(GPU). Clone the repo in a Colab runtime and run them there; only the resulting folder is
+needed locally.
+
+```bash
+!git clone <repo-url> && cd progEthics && pip install -r requirements-colab.txt
+# 0) prompts (skip to reuse the files already in assets/)
+!python -m src.generation.prompt_generator --mode 0 --dest assets   # control_prompts.txt
+!python -m src.generation.prompt_generator --mode 1 --dest assets   # single_var_prompts.txt
+!python -m src.generation.prompt_generator --mode 2 --dest assets   # double_var_prompts.txt
+RUN=/content/drive/MyDrive/ethics/PixArtSigma
+!python -m src.generation.generate_images --model pixart-sigma --out $RUN   # images + metadata
+!python -m src.extraction.extract_features --run $RUN                       # -> all_metadata.json.gz
+```
+
+- `src/generation/prompt_generator.py` builds the prompts of one mode (0 = control, 1 = single
+  variable, 2 = double variable) from the variable lists at the top of the file, one prompt per
+  line, repeated for the number of images wanted. Edit those lists to change the audited
+  jobs, races, etc. before generating.
+- `src/generation/generate_images.py` reads the prompt files (`assets/*_prompts.txt`, one
+  per prompt mode) and writes `images/` and `generation_metadata.jsonl`. It is an *example*
+  adapter: to audit another model add an entry to `MODELS` or pass `--model module:Class`
+  (subclass of `ImageGenerator`); nothing else in the pipeline changes.
+- `src/extraction/extract_features.py` runs independent stages (`image_metrics`, `faces`
+  [DeepFace], `florence` [caption + objects], `clip` [embeddings], `yolo` [objects]) and merges
+  them into a single `all_metadata.json.gz`. Choose stages with `--stages`.
+- Both steps are resumable (re-run the same command after a disconnect) and keep
+  `<run>/config.json` up to date (model, generation settings, stage status and counters,
+  extraction models, environment). The analysis and report read that same file.
+
+Locally, once `<run>/all_metadata.json.gz` exists:
+
+Copy the run folder locally (keep its `images/` folder next to `all_metadata.json.gz` to get
+image thumbnails in the qualitative examples of chapter 8).
+
+```powershell
+python -m src.analysis.analyzer --config <run>/config.json --data <run>/all_metadata.json.gz --output <run>/analysis.json
+```
 ## Feature Analysis and reporting
 
 Analysis and HTML rendering are separate steps. The analysis step reads the
