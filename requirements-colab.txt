@@ -11,3 +11,4 @@ einops
 open_clip_torch
 ultralytics
 deepface
+mtcnn
