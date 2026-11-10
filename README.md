@@ -34,7 +34,7 @@ assets/               generated prompt files (git-ignored, regenerate with step 
 notebooks/            Colab notebooks: imge_generation, feature_extraction, feature_analysis
 src/
   run_config.py       shared config.json handling (atomic, resumable, preserves manual keys)
-  generation/         prompt_generator.py, generate_images.py
+  generation/         prompt_generator.py, generate_images.py, models/ (one adapter per model)
   extraction/         extract_features.py
   analysis/           analyzer.py + chapters.py and the statistics modules
                       (coverage, bias, counterfactual, prompt adherence, embeddings,
@@ -93,8 +93,9 @@ python -m src.generation.generate_images --model pixart-sigma --out <run>
 python -m src.generation.generate_images --list-models
 ```
 
-Built-in models: `sd15`, `pixart-sigma`, `flux-schnell`. To audit another model add an entry
-to `MODELS`, or pass `--model package.module:Class` (a subclass of `ImageGenerator`); nothing
+Built-in models: `sd15`, `pixart-sigma`, `flux-schnell`, `flux2-klein-4b`, one file each in
+`src/generation/models/`. To audit another model add a file there and register it in
+`MODELS` (`models/__init__.py`), or pass `--model package.module:Class` (a subclass of `ImageGenerator`); nothing
 else in the pipeline changes.
 
 Other options: `--prompts MODE=PATH` (repeatable, defaults to `assets/*_prompts.txt`),

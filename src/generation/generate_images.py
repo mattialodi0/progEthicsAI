@@ -17,11 +17,12 @@ exist, so a disconnected Colab session loses nothing.
 
 Auditing another model
 ----------------------
-Only the *model adapter* changes between audits. The three entries in
-``MODELS`` below are examples taken from the original notebook. To audit a new
-model either add a ``DiffusersGenerator`` entry (any diffusers text-to-image
-pipeline), or subclass ``ImageGenerator`` for a non-diffusers model and pass it
-with ``--model my_module:MyGenerator``. The rest of the pipeline (prompts,
+Only the *model adapter* changes between audits. Each model has its own file in
+``src/generation/models/`` (sd15, pixart_sigma, flux_schnell, flux2_klein), and
+``models/__init__.py`` registers them in ``MODELS``. To audit a new model either
+add a file there defining a ``DiffusersGenerator`` (any diffusers text-to-image
+pipeline) and register it, or subclass ``ImageGenerator`` for a non-diffusers
+model and pass it with ``--model my_module:MyGenerator``. The rest of the pipeline (prompts,
 metadata, extraction, analysis, report) is model-agnostic.
 """
 
@@ -31,12 +32,11 @@ import argparse
 import importlib
 import json
 import logging
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from ..run_config import PROMPT_MODES, RunConfig, environment_info, now_iso, setup_logging
+from .models import MODELS, DiffusersGenerator, ImageGenerator  # noqa: F401 (re-exported)
 
 log = logging.getLogger("generation")
 
@@ -48,89 +48,8 @@ DEFAULT_PROMPT_FILES = {
 
 
 # --------------------------------------------------------------------------
-# Model adapters - the part that changes from one audit to the next
+# Model selection - the adapters live in ./models, one file per model
 # --------------------------------------------------------------------------
-class ImageGenerator(ABC):
-    """Adapter between the pipeline and one text-to-image model."""
-
-    #: Model name written in the config and shown in the report.
-    name: str
-    #: Model version / checkpoint, shown in the report.
-    version: str
-
-    @property
-    def settings(self) -> dict[str, Any]:
-        """Generation parameters shared by every image (recorded for reproducibility)."""
-        return {}
-
-    @abstractmethod
-    def load(self) -> None:
-        """Load the model onto the available device."""
-
-    @abstractmethod
-    def generate(self, prompts: list[str], seeds: list[int]) -> list[Any]:
-        """Return one PIL image per prompt, each generated from its seed."""
-
-
-@dataclass
-class DiffusersGenerator(ImageGenerator):
-    """Generic adapter for any diffusers text-to-image pipeline."""
-
-    name: str
-    version: str
-    pipeline: str                      # class name in `diffusers`, e.g. "PixArtSigmaPipeline"
-    model_id: str                      # Hugging Face repo id
-    dtype: str = "float16"             # attribute of `torch`
-    call_kwargs: dict[str, Any] = field(default_factory=dict)  # steps, guidance, size...
-    load_kwargs: dict[str, Any] = field(default_factory=dict)
-    cpu_offload: bool = False          # for models too big for the GPU (e.g. Flux)
-
-    @property
-    def settings(self) -> dict[str, Any]:
-        return {"model_id": self.model_id, "dtype": self.dtype, **self.call_kwargs}
-
-    def load(self) -> None:
-        import diffusers
-        import torch
-
-        pipeline_class = getattr(diffusers, self.pipeline)
-        self._pipe = pipeline_class.from_pretrained(
-            self.model_id, torch_dtype=getattr(torch, self.dtype), **self.load_kwargs
-        )
-        if self.cpu_offload:
-            self._pipe.enable_model_cpu_offload()
-        else:
-            self._pipe.to("cuda" if torch.cuda.is_available() else "cpu")
-
-    def generate(self, prompts: list[str], seeds: list[int]) -> list[Any]:
-        import torch
-
-        # CPU generators give the same image for a seed on any GPU.
-        generators = [torch.Generator("cpu").manual_seed(seed) for seed in seeds]
-        return self._pipe(prompts, generator=generators, **self.call_kwargs).images
-
-
-MODELS: dict[str, ImageGenerator] = {
-    "sd15": DiffusersGenerator(
-        name="StableDiffusion-1.5", version="runwayml/stable-diffusion-v1-5",
-        pipeline="StableDiffusionPipeline", model_id="runwayml/stable-diffusion-v1-5",
-        call_kwargs={"num_inference_steps": 30, "guidance_scale": 7.5},
-    ),
-    "pixart-sigma": DiffusersGenerator(
-        name="PixArtSigma-XL-2-1024-MS", version="PixArt-alpha/PixArt-Sigma-XL-2-1024-MS",
-        pipeline="PixArtSigmaPipeline", model_id="PixArt-alpha/PixArt-Sigma-XL-2-1024-MS",
-        call_kwargs={"num_inference_steps": 20, "guidance_scale": 4.5},
-    ),
-    "flux-schnell": DiffusersGenerator(
-        name="FLUX.1-schnell", version="black-forest-labs/FLUX.1-schnell",
-        pipeline="FluxPipeline", model_id="black-forest-labs/FLUX.1-schnell",
-        dtype="bfloat16", cpu_offload=True,
-        call_kwargs={"num_inference_steps": 4, "guidance_scale": 0.0,
-                     "height": 768, "width": 768, "max_sequence_length": 256},
-    ),
-}
-
-
 def resolve_model(spec: str) -> ImageGenerator:
     """A registry key, or ``package.module:Name`` (an ImageGenerator class or instance)."""
     if spec in MODELS:
