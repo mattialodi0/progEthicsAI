@@ -1,0 +1,9 @@
+# Step 2 (image generation), meant for a Colab GPU runtime.
+# Colab already provides torch, numpy and pillow.
+# Install with `pip install -U -r requirements-colab-generation.txt` so an older
+# preinstalled diffusers/transformers gets upgraded.
+diffusers              # FLUX.2-klein needs a release with Flux2KleinPipeline
+transformers>=4.51     # FLUX.2-klein text encoder (Qwen3) needs >= 4.51
+accelerate
+sentencepiece
+protobuf

@@ -3,7 +3,7 @@
 Heavy step: meant to run on a GPU, e.g. in a Colab runtime::
 
     !git clone <this repo> && cd progEthics
-    !pip install -r requirements-colab.txt
+    !pip install -U -r requirements-colab-generation.txt
     !python -m src.generation.generate_images --model pixart-sigma --out /content/drive/MyDrive/ethics/PixArtSigma
 
 Output, inside ``--out``::

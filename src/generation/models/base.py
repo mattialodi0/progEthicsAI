@@ -64,4 +64,4 @@ class DiffusersGenerator(ImageGenerator):
 
         # CPU generators give the same image for a seed on any GPU.
         generators = [torch.Generator("cpu").manual_seed(seed) for seed in seeds]
-        return self._pipe(prompts, generator=generators, **self.call_kwargs).images
+        return self._pipe(prompt=prompts, generator=generators, **self.call_kwargs).images

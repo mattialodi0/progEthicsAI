@@ -1,4 +1,5 @@
-# Heavy steps (image generation + feature extraction), meant for a Colab GPU runtime.
+# Step 3 (feature extraction), meant for a Colab GPU runtime.
+# Image generation uses requirements-colab-generation.txt instead (needs a newer transformers).
 # Colab already provides torch, numpy and pillow.
 diffusers
 transformers==4.49.0   # pinned: Florence-2 remote code breaks on newer versions

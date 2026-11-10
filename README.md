@@ -42,7 +42,8 @@ src/
   report/             report_builder.py, one report_ch_*.py per chapter, insights/explain texts
                       readme.md: design notes for the report structure
 requirements.txt          local analysis / report dependencies
-requirements-colab.txt    heavy GPU dependencies for steps 2-3
+requirements-colab-generation.txt  GPU dependencies for step 2 (generation)
+requirements-colab.txt    GPU dependencies for step 3 (extraction)
 ```
 
 ## Installation
@@ -53,13 +54,17 @@ Local (analysis and report):
 pip install -r requirements.txt
 ```
 
-Colab / GPU (generation and extraction):
+Colab / GPU: generation and extraction need different `transformers` versions, so install
+the matching file before each step (each step runs in its own process, no runtime restart needed):
 
 ```bash
-!git clone <repo-url> && cd progEthics && pip install -r requirements-colab.txt
+!git clone <repo-url> && cd progEthics
+!pip install -U -r requirements-colab-generation.txt   # before step 2
+!pip install -r requirements-colab.txt                 # before step 3
 ```
 
-`transformers` is pinned to 4.49.0 because the Florence-2 remote code breaks on newer versions.
+Extraction pins `transformers` to 4.49.0 because the Florence-2 remote code breaks on newer
+versions; generation needs >= 4.51 for the FLUX.2-klein text encoder (Qwen3).
 
 ## Usage
 
