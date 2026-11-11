@@ -45,7 +45,7 @@ from .stats_utils import (
     wilson,
 )
 
-SCHEMA = 1
+SCHEMA = 2
 
 # --------------------------------------------------------------------------
 # Configuration
@@ -180,6 +180,26 @@ def band(score: float | None) -> str | None:
     return BANDS[min(3, int(score))]
 
 
+def reliable_band(row: dict[str, Any]) -> str | None:
+    """Band of the smallest effect compatible with the data (lower CI bound).
+
+    Used for verdicts. A supported result (q < α, point estimate at least
+    small) is never reported below "small", even when its interval dips
+    under the small threshold.
+    """
+    value = band(row.get("strength_low"))
+    return "small" if value == "negligible" else value
+
+
+def _scene_question(attribute: str | None) -> str:
+    """Question for a non-demographic image property (brightness, framing,
+    caption tone). Only differences between social groups answer the
+    representational-quality question; "doctor images are brighter than
+    other jobs" describes the scene the prompt asks for, so it is kept as a
+    result but filed under context and does not drive a fairness verdict."""
+    return "quality" if attribute in SOCIAL_ATTRIBUTES else "context"
+
+
 def _p_from_ci(estimate: float, low: float, high: float) -> float | None:
     """Two-sided p-value of a normal-approximation 95% interval."""
     se = (high - low) / (2 * Z95)
@@ -253,6 +273,7 @@ class _Table:
         # seen in 8 images does not outrank a slightly smaller one in 200.
         row["strength_low"] = (row["strength_ci"][0] if row["strength_ci"][0] is not None
                                else row["strength"])
+        row["band_low"] = band(row["strength_low"])
         self.rows.append(row)
         return row
 
@@ -719,7 +740,7 @@ def _counterfactual(table: _Table, report_data: dict[str, Any]) -> None:
                 n=min(n_first, n_second), n_total=n_first + n_second,
                 p_value=finite(effect.get("p_value")),
                 question=("counterfactual" if social_change else
-                          "stereotyping" if feature in FACE_FEATURES else "quality"),
+                          "stereotyping" if feature in FACE_FEATURES else "context"),
                 stereotype_candidate=social,
                 keys=[(attribute, second, feature, category, "+")],
                 details={"first": first, "second": second, "first_share": first_share,
@@ -753,7 +774,7 @@ def _counterfactual(table: _Table, report_data: dict[str, Any]) -> None:
                                   high / sd if sd and high is not None else None],
                     n=n, n_total=n, p_value=finite(stats.get("p_value")),
                     question=("counterfactual" if social_change else
-                              "stereotyping" if demographic else "quality"),
+                              "stereotyping" if demographic else "context"),
                     stereotype_candidate=demographic,
                     keys=[(attribute, higher, f"visual:{feature}", "", "+")],
                     statement=(f"Same prompt, only {_human(attribute)} changed {first} → "
@@ -786,11 +807,12 @@ def _visual(table: _Table, report_data: dict[str, Any]) -> None:
         # Detected age is a face-model estimate of a demographic, not a pixel
         # statistic: a group drawn older or younger is a stereotyping result.
         demographic = feature in DEMOGRAPHIC_FEATURES
-        extra = ({"source": "Face detector", "question": "stereotyping",
-                  "stereotype_candidate": True} if demographic else {"question": "quality"})
         for attribute, result in tests.items():
             if attribute == "prompt_mode":
                 continue
+            extra = ({"source": "Face detector", "question": "stereotyping",
+                      "stereotype_candidate": True} if demographic
+                     else {"question": _scene_question(attribute)})
             epsilon = finite(result.get("epsilon_squared"))
             groups = result.get("groups") or {}
             if epsilon is not None:
@@ -976,7 +998,9 @@ def _caption(table: _Table, report_data: dict[str, Any], config: dict[str, Any])
                 family="g", magnitude=g, magnitude_ci=[g - Z95 * se_g, g + Z95 * se_g],
                 n=min(n, rest_n), n_total=n + rest_n,
                 p_value=normal_p(difference / se_diff) if se_diff else None,
-                question="quality" if not social else "stereotyping",
+                # Tone towards a social group is stereotyping; tone of a job or
+                # place is a property of the scene, not of a group.
+                question="stereotyping" if social else "context",
                 stereotype_candidate=social,
                 keys=[(attribute, group, "sentiment", "", sign)],
                 details={"mean": mean, "rest_mean": rest_mean},
@@ -1283,7 +1307,13 @@ def _answers(table: _Table, clusters: list[dict[str, Any]]) -> list[dict[str, An
         supported.sort(key=lambda row: rank_key(row["strength_low"],
                                                 evidence.get(row.get("cluster"), 2),
                                                 row["n"], row["strength"]))
-        top_band = supported[0]["band"] if supported else None
+        # Verdict: the largest disparity the data reliably shows, i.e. the band
+        # at the lower CI bound of the top-ranked result. With hundreds of
+        # tests the largest point estimate is almost always "large"; the
+        # lower bound and the counts below say how much of that is solid.
+        top_band = reliable_band(supported[0]) if supported else None
+        reliable = {name: sum(1 for row in supported if row["band_low"] == name)
+                    for name in ("large", "medium")}
         context = [row for row in rows if row["context"]][:3]
         related = [cluster for cluster in clusters if cluster["question"] == key]
         answers.append({
@@ -1296,6 +1326,7 @@ def _answers(table: _Table, clusters: list[dict[str, Any]]) -> list[dict[str, An
             "omnibus_supported": sum(1 for row in tested if row["level"] == "omnibus"
                                      and row["tier"] == "supported"),
             "band": top_band,
+            "reliable": reliable,
             "top": [row["id"] for row in supported[:3]],
             "context": [row["id"] for row in context],
             "findings": len(related),

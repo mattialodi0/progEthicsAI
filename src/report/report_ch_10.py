@@ -266,7 +266,10 @@ def _statistics(settings: dict[str, Any], correction: dict[str, Any]) -> str:
       tiny effects in large samples from counting.</li>
       <li><strong>Conservative ranking.</strong> Results are ranked by the strength at the
       <em>lower</em> end of their interval, so a huge gap seen in 8 images does not outrank a
-      solid one seen in 200.</li>
+      solid one seen in 200. The verdict of each fairness question is the band of its
+      top-ranked result at that lower end (the largest <em>reliable</em> disparity found),
+      reported with the number of results that are reliably large or moderate, because a
+      maximum over many tests says little on its own.</li>
       <li><strong>Evidence clusters.</strong> Results that make the same claim about the same
       subgroup are merged. A cluster is <em>counterfactual-confirmed</em> when a matched-pair
       result agrees with a pooled one, <em>convergent</em> when two or more different

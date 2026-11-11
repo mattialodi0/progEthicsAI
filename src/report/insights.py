@@ -148,10 +148,12 @@ def conclusive_insights(report_data: dict[str, Any]) -> list[str]:
         top = rows.get((answer.get("top") or [None])[0])
         if not top:
             continue
+        reliable = answer.get("reliable") or {}
         items.append(
             f"<strong>{esc(answer['title'])}</strong> "
-            f"({esc(_BAND_WORDS.get(answer['band'], answer['band']))} disparity, "
-            f"{answer['supported']} of {answer['tests']} tests supported): "
+            f"(largest reliable disparity: {esc(_BAND_WORDS.get(answer['band'], answer['band']))}; "
+            f"{answer['supported']} of {answer['tests']} tests supported, "
+            f"{reliable.get('large', 0)} reliably large): "
             f"{esc(top['statement'].rstrip('.'))}. "
             f'<a href="{esc(answer.get("link", "#chapter-9"))}">Details &rarr;</a>'
         )

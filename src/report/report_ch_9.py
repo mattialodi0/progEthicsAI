@@ -16,9 +16,12 @@ from typing import Any
 from .explain import badge, callout, chapter_header, esc, guide, label, metric_defs, pct
 
 _BAND_TONE = {"negligible": "neutral", "small": "low", "medium": "mid", "large": "high"}
+# Verdict of a fairness question: the band of its top-ranked supported result
+# at the lower end of the confidence interval (see ``synthesis._answers``).
 _BAND_TEXT = {None: "No supported disparity", "negligible": "Negligible",
-              "small": "Small disparity", "medium": "Moderate disparity",
-              "large": "Large disparity"}
+              "small": "Largest reliable disparity: small",
+              "medium": "Largest reliable disparity: moderate",
+              "large": "Largest reliable disparity: large"}
 _EVIDENCE_TONE = {"confirmed": "high", "convergent": "mid", "supported": "low"}
 _TIER_TONE = {"supported": "high", "descriptive": "mid", "negligible": "neutral",
               "context": "neutral", "measurement": "low"}
@@ -33,7 +36,7 @@ _FLAG_TEXT = {
 _ROW_FIELDS = (
     "id", "lens", "source", "link", "level", "attribute", "subgroup", "reference",
     "feature", "category", "scope", "metric", "effect", "effect_unit", "ci", "family",
-    "strength", "strength_ci", "strength_low", "band", "n", "n_total", "p_value",
+    "strength", "strength_ci", "strength_low", "band", "band_low", "n", "n_total", "p_value",
     "q_value", "tier", "context", "stereotype_candidate", "question", "cluster",
     "statement",
 )
@@ -103,6 +106,9 @@ def _stat_line(row: dict[str, Any]) -> str:
     strength_text = "–" if strength is None else f"{strength:.1f}"
     if strength is not None and row.get("band"):
         strength_text += f" ({row['band']})"
+    low = _number(row.get("strength_low"))
+    if strength is not None and low is not None and row.get("band_low"):
+        strength_text += f", at least {low:.1f} ({row['band_low']})"
     parts = [
         f"<span><b>Effect</b> {esc(_effect(row))}</span>",
         f"<span><b>Strength</b> {esc(strength_text)}</span>",
@@ -111,6 +117,14 @@ def _stat_line(row: dict[str, Any]) -> str:
         f'<span><a href="{esc(row.get("link", "#"))}">→ {esc(row.get("source", ""))}</a></span>',
     ]
     return f'<div class="stat-line">{"".join(parts)}</div>'
+
+
+def reliable_counts(answer: dict[str, Any]) -> str:
+    """How many supported results of a question stay large / moderate at the
+    lower end of their interval, e.g. "89 reliably large, 81 reliably moderate"."""
+    reliable = answer.get("reliable") or {}
+    return ", ".join(f"{reliable.get(key, 0):,} reliably {word}"
+                     for key, word in (("large", "large"), ("medium", "moderate")))
 
 
 # --------------------------------------------------------------------------
@@ -154,6 +168,8 @@ def _overview(data: dict[str, Any], rows: dict[str, dict[str, Any]],
         verdict = _BAND_TEXT.get(answer.get("band"), "No supported disparity")
         line = (f"<strong>{esc(answer['title'])}</strong>: {esc(verdict.lower())} — "
                 f"{answer.get('supported', 0)} of {answer.get('tests', 0)} tests supported")
+        if answer.get("supported"):
+            line += f" ({reliable_counts(answer)})"
         if top:
             line += f". Strongest: {esc(top['statement'].rstrip('.'))}"
         lines.append(line + ".")
@@ -199,6 +215,8 @@ def _answers(data: dict[str, Any], rows: dict[str, dict[str, Any]]) -> str:
         <p><strong>{answer.get('supported', 0)}</strong> of {answer.get('tests', 0)} specific
         tests supported{f", {answer['omnibus_supported']} omnibus test(s) significant"
                         if answer.get('omnibus_supported') else ""}.
+        {f"Of the supported results, {reliable_counts(answer)} at the lower end of the 95% CI."
+         if answer.get('supported') else ""}
         <a href="{esc(answer['link'])}">Go to the chapter →</a></p>
         <ol class="answer-list">{''.join(items)}</ol>{extra_html}{context_html}
       </article>""")
@@ -718,8 +736,10 @@ def render_chapter_nine(data: dict[str, Any]) -> str:
        "Makes a gap in percentage points, a mean difference and a Cramér's V comparable. "
        "Bands: &lt; 1 negligible, 1–2 small, 2–3 medium, ≥ 3 large."),
       ("Conservative strength", "The strength at the lower end of the effect's 95% "
-       "confidence interval.", "Used for ranking: the smallest effect still compatible with "
-       "the data, so a huge gap in 8 images does not outrank a solid one in 200."),
+       "confidence interval.", "Used for ranking and for the verdicts in 9.1: the smallest "
+       "effect still compatible with the data, so a huge gap in 8 images does not outrank a "
+       "solid one in 200. A result is <em>reliably</em> large (or moderate) when it stays in "
+       "that band at this lower end."),
       ("q-value", f"Benjamini–Hochberg adjusted p-value over all {correction.get('tests', 0):,} "
        "tests of the audit, including the candidate objects and caption words screened "
        "before the top ones were stored.", f"A result is <em>supported</em> when q &lt; {alpha} "
@@ -751,17 +771,30 @@ def render_chapter_nine(data: dict[str, Any]) -> str:
   <section id="chapter-9-answers">
     <h3>9.1 Answers to the fairness questions</h3>
     <p>The five questions of the reading guide, answered from the results table. The verdict
-    is the effect band of the strongest supported result; the three listed results are the
-    strongest by conservative strength (ties broken by sample size).</p>
+    is the <strong>largest reliable disparity found</strong>: the effect band of the
+    top-ranked supported result at the <em>lower</em> end of its 95% confidence interval (a
+    supported result counts as at least small). It is not a grade for the whole question, so
+    each card also says how many supported results stay large or moderate at that lower end.
+    The three listed results are the strongest by conservative strength (ties broken by
+    evidence level and sample size).</p>
     {guide(
         read="Each card counts the specific tests that address the question and how many are "
-             "supported. Below each result: its effect with 95% CI, the strength, the smallest "
-             "group size, the q-value and a link to the chapter that measured it.",
+             "supported. Below each result: its effect with 95% CI, the strength (point "
+             "estimate, then the lower end of its interval), the smallest group size, the "
+             "q-value and a link to the chapter that measured it.",
         look=["A large verdict backed by results with large n and no ⚠ caveats.",
+              "The share of tests that are reliably large: one large result among hundreds of "
+              "tests is a different situation from dozens. This is the number to use when "
+              "comparing models.",
               "Questions where nothing is supported despite many tests: an informative null, "
               "if the samples are large enough to detect a small effect."],
-        caution="The verdict summarises the strongest result only. Read the listed results and "
-                "the evidence matrix before generalising to the whole question.",
+        caution=["The verdict is a maximum: the more tests a question has, the more likely one "
+                 "of them is large. Read the counts, the listed results and the evidence matrix "
+                 "before generalising to the whole question.",
+                 "Representational quality only counts differences between social groups "
+                 "(gender, race, age, continent, status, traits). Brightness, framing or caption "
+                 "tone that differ between jobs or workplaces describe the requested scene; they "
+                 "stay in the results table under the question “Context”."],
     )}
     {_answers(data, rows)}
   </section>
