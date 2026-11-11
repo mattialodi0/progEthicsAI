@@ -309,7 +309,7 @@ def _matrix(data: dict[str, Any], rows: dict[str, dict[str, Any]]) -> str:
             "size, not evidence of absence): " + "; ".join(
                 f"{esc(label(attribute))} × {esc(lenses.get(column, {}).get('label', column))}"
                 for attribute, column in null_cells) + "."
-        ], "Null results")
+        ], "Null results", suggestion=False)
     return f"""
     <div class="table-wrap"><table class="evidence-matrix">
       <thead><tr><th scope="col">Prompt attribute</th>{head}
@@ -362,8 +362,8 @@ def _measurement(data: dict[str, Any], rows: dict[str, dict[str, Any]]) -> str:
         items.append("No measurement caveat was triggered.")
     warnings = data.get("warnings") or []
     warning_html = callout("caution", [esc(item) for item in warnings],
-                           "Synthesis warnings") if warnings else ""
-    return callout("caution", items, "Measurement reliability") + warning_html
+                           "Synthesis warnings", suggestion=False) if warnings else ""
+    return callout("caution", items, "Measurement reliability", suggestion=False) + warning_html
 
 
 # --------------------------------------------------------------------------

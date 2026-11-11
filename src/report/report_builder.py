@@ -110,7 +110,8 @@ _STYLE = """
     @media (max-width: 800px) { .report-layout { display: block; }
       .sidebar { margin-bottom: 1rem; position: static; } .sidebar nav {
         display: flex; gap: .25rem; overflow-x: auto; white-space: nowrap; }
-      .sidebar-title { display: none; } .sidebar .subitem { display: none; } }
+      .sidebar-title { display: none; } .sidebar .subitem { display: none; }
+      .suggestion-toggle { flex: none; margin: 0 .5rem 0 0; width: auto; } }
     .report-header { border-bottom: 1px solid var(--border); margin-bottom: 1.5rem;
       padding-bottom: 1rem; }
     .report-header h1 { font-size: 2.1rem; margin: 0 0 .25rem; }
@@ -184,9 +185,28 @@ _STYLE = """
     .callout-look .callout-title { color: var(--look); }
     .callout-caution { background: var(--caution-bg); border-color: var(--caution); }
     .callout-caution .callout-title { color: var(--caution); }
-    .callout-finding { background: var(--finding-bg); border-color: var(--finding);
-      margin: 1rem 0; }
-    .callout-finding .callout-title { color: var(--finding); }
+    /* Findings are data, not advice: a full-border card with a solid title
+       band, so they differ from the suggestion call-outs in shape, not only colour. */
+    .callout-finding { background: var(--surface); border: 2px solid var(--finding);
+      border-radius: 6px; box-shadow: 0 2px 6px #6a4bb51f; margin: 1rem 0; padding: 0; }
+    .callout-finding .callout-title { background: var(--finding); color: #fff;
+      padding: .45rem 1rem; }
+    .callout-finding .callout-title::before { content: ""; margin-right: .5rem; }
+    .callout-finding > ul, .callout-finding > p { margin: 0; padding: .6rem 1rem .2rem 2.2rem; }
+    .callout-finding > p { padding-left: 1rem; }
+    .callout-finding > .callout-foot { border-top: 1px dashed var(--border);
+      margin-top: .4rem; padding: .45rem 1rem .6rem; }
+    .suggestion-toggle { align-items: center; background: var(--accent-soft);
+      border: 1px solid var(--accent); border-radius: 6px; color: var(--accent);
+      cursor: pointer; display: flex; font: inherit; font-size: .85rem; font-weight: 600;
+      gap: .5rem; margin-bottom: .8rem; padding: .4rem .6rem; text-align: left; width: 100%; }
+    .suggestion-toggle:hover { background: #dce8f4; }
+    .suggestion-toggle[aria-pressed="false"] { background: var(--surface); color: var(--muted);
+      border-color: var(--border); }
+    .suggestion-toggle .toggle-dot { border: 2px solid currentColor; border-radius: 3px;
+      flex: none; height: .8rem; width: .8rem; }
+    .suggestion-toggle[aria-pressed="true"] .toggle-dot { background: currentColor; }
+    body.hide-suggestions .suggestion { display: none; }
     .callout-foot { color: var(--muted); font-size: .8rem; font-style: italic; }
     details.defs { box-shadow: none; }
     details.defs table th[scope=row] { color: var(--text); white-space: nowrap; }
@@ -252,6 +272,25 @@ _PLOTLY_DEFAULTS = """
 """
 
 _SCRIPT = """
+  // Show / hide the reading-suggestion call-outs (How to read, What to look
+  // for, Caveats). Visible by default; the choice is remembered per browser.
+  (() => {
+    const button = document.getElementById("suggestion-toggle");
+    if (!button) return;
+    const apply = (visible) => {
+      document.body.classList.toggle("hide-suggestions", !visible);
+      button.setAttribute("aria-pressed", String(visible));
+      button.querySelector(".toggle-state").textContent = visible ? "shown" : "hidden";
+    };
+    let visible = true;
+    try { visible = localStorage.getItem("report-suggestions") !== "hidden"; } catch (e) {}
+    apply(visible);
+    button.addEventListener("click", () => {
+      visible = !visible;
+      apply(visible);
+      try { localStorage.setItem("report-suggestions", visible ? "shown" : "hidden"); } catch (e) {}
+    });
+  })();
   // Highlight the sidebar entry of the section currently in view. Only
   // elements that have a sidebar link are observed, so plot containers whose
   // ids also start with "chapter-" cannot clear the highlight.
@@ -395,6 +434,11 @@ def build_report(
 <div class="report-layout">
   <aside class="sidebar" aria-label="Report index">
     <nav>
+      <button type="button" class="suggestion-toggle" id="suggestion-toggle"
+        aria-pressed="true" title="Show or hide the How to read / What to look for / Caveats boxes">
+        <span class="toggle-dot" aria-hidden="true"></span>
+        <span>Reading suggestions: <span class="toggle-state">shown</span></span>
+      </button>
       <div class="sidebar-title">Report index</div>
 {_sidebar()}
     </nav>

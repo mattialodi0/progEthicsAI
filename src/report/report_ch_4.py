@@ -182,7 +182,7 @@ def render_chapter_four(adherence: dict[str, Any]) -> str:
       ("Confusion matrix cell", "Share of images requesting the row value that were "
        "detected as the column value.", "The diagonal is adherence; off-diagonal cells show "
        "<em>what the model drew instead</em>."),
-  ], open_=True)}
+  ], open_=False)}
   <section id="chapter-4-attributes">
     <h3>4.1 Overall adherence by attribute</h3>
     {guide(

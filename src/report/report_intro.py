@@ -80,7 +80,7 @@ def render_reading_guide() -> str:
       <li><strong>Representational quality</strong> — are some groups shown with less
         variety, different framing or a different visual style? (ch. 3.2, 7)</li>
     </ol>
-    <div class="guide">
+    <div class="guide suggestion">
       {callout("look", [
         "<strong>Size before significance.</strong> Look first at the gap (percentage "
         "points, Cramér's V, lift); a p-value only says it is unlikely to be noise.",

@@ -34,7 +34,7 @@ def render_chapter_one(
     """
     settings = summary.get("generation_settings") or {}
     settings_html = (
-        f"<details><summary>Show generation settings</summary>"
+        f"<details><summary>Generation settings</summary>"
         f"<pre>{html.escape(json.dumps(settings, indent=2, ensure_ascii=True))}</pre></details>"
         if settings else
         '<p class="note">No generation settings (seed, steps, guidance scale, resolution) '

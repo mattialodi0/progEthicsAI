@@ -54,11 +54,30 @@ def _body(items: str | Iterable[str]) -> str:
     return "<ul>" + "".join(f"<li>{item}</li>" for item in items) + "</ul>"
 
 
-def callout(kind: str, body: str | Iterable[str], title: str | None = None) -> str:
-    """Return one coloured call-out box."""
+# Reading-guide call-outs that the reader can hide with the "Show reading
+# suggestions" toggle. Findings are computed from the data and always shown.
+_SUGGESTION_KINDS = {"read", "look", "caution"}
+
+
+def callout(
+    kind: str,
+    body: str | Iterable[str],
+    title: str | None = None,
+    *,
+    suggestion: bool | None = None,
+) -> str:
+    """Return one coloured call-out box.
+
+    ``suggestion`` marks the box as generic reading advice that the reader can
+    hide; it defaults to True for the read/look/caution kinds. Pass False for
+    boxes whose content is computed from the data.
+    """
     heading = title or _TITLES.get(kind, kind)
+    if suggestion is None:
+        suggestion = kind in _SUGGESTION_KINDS
+    extra = " suggestion" if suggestion else ""
     return (
-        f'<aside class="callout callout-{esc(kind)}">'
+        f'<aside class="callout callout-{esc(kind)}{extra}">'
         f'<div class="callout-title">{esc(heading)}</div>{_body(body)}</aside>'
     )
 
@@ -75,7 +94,7 @@ def guide(
         for kind, body in (("read", read), ("look", look), ("caution", caution))
         if body
     ]
-    return f'<div class="guide">{"".join(parts)}</div>' if parts else ""
+    return f'<div class="guide suggestion">{"".join(parts)}</div>' if parts else ""
 
 
 def chapter_header(number: int, title: str, question: str, intro: str) -> str:

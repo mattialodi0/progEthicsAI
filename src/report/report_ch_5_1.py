@@ -101,7 +101,7 @@ def render_chapter_five(bias_stats: dict[str, Any]) -> str:
        "value and detected feature were independent.", "&lt; 0.05: probably not noise. With "
        "small n or many sparse cells the test is approximate; with large n tiny effects "
        "become “significant”."),
-  ], open_=True)}
+  ], open_=False)}
   <section id="chapter-5-overview" aria-labelledby="chapter-5-overview-heading">
     <h3 id="chapter-5-overview-heading">5.0 Association overview</h3>
     <p>Association strength between every prompt attribute and every detected feature,

@@ -167,8 +167,16 @@ def _transition_selector(
                   }}
                   const attributes = {prefix}Detected.filter(
                     (attribute) => attribute !== variable);
-                  const labels = attributes.flatMap((attribute) =>
-                    [{prefix}Title(attribute) + ' (before)', {prefix}Title(attribute) + ' (after)']);
+                  // Two-level (multicategory) x axis: each attribute groups its
+                  // "before" and "after" bars side by side under one label.
+                  // Blank spacer slots (unique whitespace names) separate the groups.
+                  const slots = attributes.flatMap((attribute, i) => [
+                    ...(i ? [{{spacer: true, group: " ".repeat(i), side: " "}}] : []),
+                    {{attribute, side: "first", group: {prefix}Title(attribute), label: "before"}},
+                    {{attribute, side: "second", group: {prefix}Title(attribute), label: "after"}}
+                  ]);
+                  const groups = slots.map((slot) => slot.group);
+                  const sides = slots.map((slot) => slot.spacer ? " " : slot.label);
                   const categories = Array.from(new Set(attributes.flatMap((attribute) =>
                     pairs.flatMap((pair) => [
                       {prefix}Missing(pair.detected.first[attribute]),
@@ -180,21 +188,20 @@ def _transition_selector(
                   const traces = categories.map((category) => ({{
                     type: "bar",
                     name: {prefix}Title(category),
-                    x: labels,
-                    y: attributes.flatMap((attribute) => [
-                      counts(attribute, "first", category),
-                      counts(attribute, "second", category)
-                    ]),
-                    text: attributes.flatMap((attribute) => [
-                      counts(attribute, "first", category) ? {prefix}Title(category) : "",
-                      counts(attribute, "second", category) ? {prefix}Title(category) : ""
-                    ]),
+                    x: [groups, sides],
+                    customdata: groups.map((group, i) => group.trim() + " (" + sides[i] + ")"),
+                    y: slots.map((slot) => slot.spacer ? null
+                      : counts(slot.attribute, slot.side, category)),
+                    text: slots.map((slot) => !slot.spacer
+                      && counts(slot.attribute, slot.side, category)
+                      ? {prefix}Title(category) : ""),
                     textposition: "inside",
                     insidetextanchor: "middle",
-                    hovertemplate: "%{{x}}<br>Detected: %{{text}}<br>Pairs: %{{y}}<extra></extra>"
+                    hovertemplate: "%{{customdata}}<br>Detected: %{{text}}<br>Pairs: %{{y}}<extra></extra>"
                   }}));
                   Plotly.react(document.getElementById("{prefix}-plot"), traces, {{
                     barmode: "stack",
+                    bargap: 0.05,
                     height: Math.max(420, attributes.length * 80),
                     margin: {{l: 65, r: 25, t: 20, b: 100}},
                     yaxis: {{title: "Matched pairs"}},
@@ -356,7 +363,7 @@ def render_chapter_six(data: dict[str, Any]) -> str:
        "by the mean distance between images that share the same requested value.",
        "&lt; 1: changing the word moves the image less than the typical difference between "
        "two images with the same value; &gt; 1: the attribute change dominates."),
-  ], open_=True)}
+  ], open_=False)}
   <section id="chapter-6-overview">
     <h3>Overview</h3>
     {guide(
