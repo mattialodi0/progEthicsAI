@@ -198,8 +198,6 @@ Bias dimensions analyzed (conditional distributions such as P(gender | job)):
 9. **Cross-analysis and key findings**: evidence combined across measurements to identify robust patterns.
 10. **Methodology, limitations and appendix**: definitions, uncertainty, robustness, reproducibility.
 
-The design rationale for each chapter is in [src/report/readme.md](src/report/readme.md).
-
 ## Limitations
 
 Demographic labels are *perceived* attributes predicted by automatic models (DeepFace, Florence-2,
