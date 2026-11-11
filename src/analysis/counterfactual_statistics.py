@@ -27,7 +27,10 @@ from .stats_utils import (
 
 
 COUNTERFACTUAL_ATTRIBUTES = ("gender", "race", "age", "emotion", "job", "workplace")
-NUMERICAL_FEATURES = ("n_people", "person_area_ratio", "face_area_ratio")
+NUMERICAL_FEATURES = ("n_people", "person_area_ratio", "face_area_ratio", "detected_age")
+# Numerical features that the swapped attribute is meant to change: their
+# difference is adherence (chapter 4), not a side effect.
+INTENDED_CHANGES = {"age": ("detected_age",)}
 PROMPT_VALUES = {
     "gender": ("male", "female", "man", "woman"),
     "race": ("white", "black", "asian", "hispanic", "middle eastern"),
@@ -230,6 +233,8 @@ def _attribute_analysis(
             if result is not None:
                 adherence[condition].append(result)
         for feature in NUMERICAL_FEATURES:
+            if feature in INTENDED_CHANGES.get(attribute, ()):
+                continue
             left, right = first.get(feature), second.get(feature)
             if isinstance(left, (int, float)) and isinstance(right, (int, float)):
                 numerical[feature].append(float(right) - float(left))

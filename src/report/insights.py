@@ -244,6 +244,25 @@ def chapter_two(coverage: dict[str, Any]) -> list[str]:
                 f"{esc(top)} appears in {values[top]} images vs {esc(low)} in {values[low]} "
                 f"({ratio:.1f}× difference). Compare percentages, not raw counts."
             )
+    confidence = coverage.get("classifier_confidence") or {}
+    shares = {name: item["confident"] / item["n"]
+              for name, item in (confidence.get("attributes") or {}).items() if item.get("n")}
+    if len(shares) >= 2:
+        low = min(shares, key=shares.get)
+        high = max(shares, key=shares.get)
+        if shares[low] < 0.9:
+            groups = {name: item["confident"] / item["n"] for name, item in
+                      (confidence["attributes"][low].get("by_requested") or {}).items()
+                      if item.get("n", 0) >= MIN_GROUP and name != "not requested"}
+            worst = min(groups, key=groups.get) if groups else None
+            notes.append(
+                f"The face model is confident (top class ≥ {pct(confidence.get('threshold'), 0)}) "
+                f"about <strong>{esc(low)}</strong> for only {pct(shares[low], 0)} of faces, "
+                f"against {pct(shares[high], 0)} for {esc(high)}"
+                + (f"; the least certain requested group is <strong>{esc(worst)}</strong> "
+                   f"({pct(groups[worst], 0)} confident)" if worst else "")
+                + f". Results about detected {esc(low)} rest on many near-ties between classes."
+            )
     return notes
 
 
@@ -351,6 +370,42 @@ def chapter_four(adherence: dict[str, Any]) -> list[str]:
             f"{esc(requested)} → {esc(detected)} in {pct(share, 0)} of {esc(attribute)} "
             f"prompts (n={total})"
             for share, attribute, requested, detected, _, total in confusions[:4]) + ".")
+    age = adherence.get("age_numeric") or {}
+    age_groups = {term: item for term, item in (age.get("groups") or {}).items()
+                  if (item.get("n") or 0) >= MIN_GROUP and _num(item.get("mean")) is not None}
+    if len(age_groups) >= 2:
+        text = ("Mean detected age by requested term: " + ", ".join(
+            f"{esc(term)} {item['mean']:.0f}" for term, item in age_groups.items()) + " years")
+        baseline = _num((age.get("not_requested") or {}).get("mean"))
+        if baseline is not None:
+            text += f" (no age requested: {baseline:.0f})"
+        merged = [item for item in age.get("separation", [])
+                  if _num(item.get("hedges_g")) is not None and item["hedges_g"] < 0.2
+                  and item["lower"] in age_groups and item["higher"] in age_groups]
+        if merged:
+            text += (". " + " and ".join(
+                f"<strong>“{esc(item['higher'])}” is not drawn older than "
+                f"“{esc(item['lower'])}”</strong> (g = {item['hedges_g']:+.2f})"
+                for item in merged)
+                + ", so adherence gaps between these terms reflect the age cut-offs more "
+                  "than the images")
+        notes.append(text + ".")
+    fragile = []
+    for attribute, item in (adherence.get("probabilities") or {}).items():
+        for value, stats in (item.get("by_value") or {}).items():
+            hard, soft = _num(stats.get("accuracy")), _num(stats.get("soft_accuracy"))
+            if hard is not None and soft is not None and (stats.get("n") or 0) >= MIN_GROUP:
+                fragile.append((hard - soft, attribute, value, hard, soft, stats))
+    fragile.sort(key=lambda entry: -entry[0])
+    if fragile and fragile[0][0] >= 0.1:
+        notes.append("Adherence that rests on uncertain labels (top label vs "
+                     "probability-weighted): " + "; ".join(
+                         f"{esc(attribute)} = {esc(value)} {pct(hard, 0)} vs {pct(soft, 0)}, "
+                         f"{stats.get('n_confident', 0)} of {stats.get('n')} labels confident"
+                         for gap, attribute, value, hard, soft, stats in fragile[:3]
+                         if gap >= 0.1)
+                     + ". For these groups the face model is a weak instrument: treat their "
+                       "adherence as approximate.")
     return notes
 
 
@@ -524,8 +579,22 @@ def chapter_six(data: dict[str, Any]) -> list[str]:
     for attribute, item in by_attribute.items():
         for feature, stats in (item.get("numerical_differences") or {}).items():
             mean = _num(stats.get("mean"))
-            if mean is not None and (stats.get("n") or 0) >= MIN_GROUP:
+            if mean is None or (stats.get("n") or 0) < MIN_GROUP:
+                continue
+            if feature != "detected_age":
                 shifts.append((abs(mean), attribute, feature, mean, stats.get("n")))
+                continue
+            # Years, not a ratio: reported on its own, and only for two-value
+            # swaps, where "second − first" has a single meaning.
+            conditions = sorted((item.get("adherence") or {}).keys())
+            low, high = _num(stats.get("ci_low")), _num(stats.get("ci_high"))
+            if len(conditions) == 2 and low is not None and high is not None and low * high > 0:
+                notes.append(
+                    f"With the rest of the prompt fixed, changing <strong>{esc(attribute)}"
+                    f"</strong> from {esc(conditions[0])} to {esc(conditions[1])} changes the "
+                    f"detected age by {mean:+.1f} years on average (95% CI {low:+.1f} to "
+                    f"{high:+.1f}, n={stats.get('n')} pairs)."
+                )
     shifts = [shift for shift in sorted(shifts, reverse=True) if shift[0] > 0.05]
     if shifts:
         notes.append("Largest systematic shifts in non-requested numerical features: " + "; ".join(

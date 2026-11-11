@@ -76,6 +76,11 @@ def render_chapter_seven(chapter_data: dict[str, Any]) -> str:
       ("Person / face area ratio", "Share of the image covered by person and by face "
        "bounding boxes.", "High face ratio = close-up portrait; low = distant figure. "
        "Portraits individualise, distant figures depersonalise."),
+      ("Detected age", "Age in years estimated by the face model (mean over the faces of "
+       "the image), only for prompts that do not request an age.", "Shows how old the model "
+       "draws a job, gender, race or status by default, without the young / middle-aged / "
+       "old cut-offs. The estimates are compressed towards 30–40: compare groups, do not "
+       "read the years literally."),
       ("Silhouette score", "Mean of (b − a) / max(a, b) over images, where a is the mean "
        "distance to the own group and b to the nearest other group.", "−1 to 1; near 0 = "
        "groups overlap, &gt; 0.25 = noticeable structure, &gt; 0.5 = clearly separate."),
@@ -92,7 +97,10 @@ def render_chapter_seven(chapter_data: dict[str, Any]) -> str:
               "Face or person area ratios that differ by group: one group shown as close "
               "portraits, another as distant or partial figures.",
               "Number of people &gt; 1 concentrated in some groups (e.g. crowds for some "
-              "continents or statuses)."],
+              "continents or statuses).",
+              "Detected age that differs by job, gender or status (e.g. women drawn younger "
+              "than men, some jobs drawn older): an age stereotype that the three age groups "
+              "of chapter 5 are too coarse to show."],
         caution="Brightness and colour also depend on skin tone and on settings that the "
                 "prompt implies (e.g. a construction site vs an office). Compare groups "
                 "within the same prompt mode where possible.",
@@ -135,7 +143,8 @@ def render_chapter_seven(chapter_data: dict[str, Any]) -> str:
     const chapterSevenLabels = {{
       brightness: "Brightness", saturation: "Saturation", contrast: "Contrast",
       n_people: "Number of people", person_area_ratio: "Person area ratio",
-      face_area_ratio: "Face area ratio", prompt_mode: "Prompt mode",
+      face_area_ratio: "Face area ratio", detected_age: "Detected age (years)",
+      prompt_mode: "Prompt mode",
       toxic_trait: "Toxic trait", positive_trait: "Positive trait"
     }};
     const chapterSevenTitle = (value) => chapterSevenLabels[value] ||
@@ -169,6 +178,7 @@ def render_chapter_seven(chapter_data: dict[str, Any]) -> str:
         xaxis: {{title: featureName}}, yaxis: {{title: "Images"}}, bargap: 0.05,
         shapes: reference("x"), height: 380}});
       const boxes = Object.entries(groups)
+        .filter(([, values]) => values.length)
         .map(([name, values]) => [name, values, chapterSevenMedian(values)])
         .sort((left, right) => (left[2] ?? 0) - (right[2] ?? 0));
       Plotly.newPlot("chapter-7-feature-groups", boxes.map(([name, values]) =>

@@ -234,6 +234,8 @@ _FEATURE_HELP = {
     "n_people": "number of people detected in the image",
     "person_area_ratio": "share of the image covered by people (framing / zoom)",
     "face_area_ratio": "share of the image covered by the face (close-up vs full body)",
+    "detected_age": "age in years estimated by the face model; not shown for age swaps, "
+                    "where a change is the intended effect",
 }
 
 
@@ -245,11 +247,10 @@ def _numerical_plots(data: dict[str, Any]) -> str:
             values = data.get("by_attribute", {}).get(attribute, {}).get(
                 "numerical_differences", {}).get(feature, {}).get("values", [])
             if values:
-                figure.add_trace(go.Box(y=values, name=attribute, boxmean=True,
-                                        boxpoints="outliers", showlegend=False))
+                figure.add_trace(go.Box(y=[abs(value) for value in values], name=attribute,
+                                        boxmean=True, boxpoints="outliers", showlegend=False))
         if figure.data:
-            figure.add_hline(y=0, line_dash="dash", line_color="#52606d")
-            figure.update_yaxes(title="After − before")
+            figure.update_yaxes(title="|After − before|", rangemode="tozero")
             cards.append(
                 f'<article class="plot-card"><h4>{esc(label(feature))}</h4>'
                 f'<p class="note">{esc(_FEATURE_HELP.get(feature, ""))}</p>'
@@ -419,15 +420,16 @@ def render_chapter_six(data: dict[str, Any]) -> str:
     </article>
     <h4>6.1.4 Paired differences in numerical image features</h4>
     {guide(
-        read="Each box is the distribution of (after − before) over all matched pairs for "
-             "one changed attribute; the dashed horizontal line is zero and the dashed line "
-             "inside each box is its mean.",
-        look="Boxes shifted clearly away from zero for demographic attributes: e.g. if "
-             "switching gender systematically changes the face area, one gender is framed "
-             "closer (portrait) and the other farther away (full body). Shifts for job or "
+        read="Each box is the distribution of the absolute difference |after − before| over "
+             "all matched pairs for one changed attribute; the dashed line inside each box is "
+             "its mean. It shows how much the feature changes, not in which direction.",
+        look="Demographic attributes whose boxes sit clearly higher than the others: e.g. if "
+             "switching gender changes the face area much more than switching emotion, the "
+             "framing (portrait vs full body) depends on the gender. Large changes for job or "
              "workplace are expected, since they alter the scene.",
-        caution="The direction depends on which value is “before”: pairs are ordered "
-                "alphabetically by the changed value (e.g. female → male).",
+        caution="Two generations of the same prompt already differ, so absolute differences "
+                "are never zero: compare attributes with each other rather than with zero. "
+                "The plot does not show which value is framed closer or farther.",
     )}
     {_numerical_plots(data)}
   </section>

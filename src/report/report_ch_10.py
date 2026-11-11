@@ -21,8 +21,10 @@ _MODELS = (
      "Face detection (MTCNN backend, aligned, a face is required), then per-face "
      "<strong>age</strong> (a number), <strong>gender</strong>, <strong>race</strong> "
      "(six classes) and <strong>emotion</strong> (seven classes) with a probability per class. "
-     "The dominant class is used.",
-     "Chapters 2–6, 9",
+     "The dominant class is used, and age is cut into young (&lt; 30), middle-aged (30–49) and "
+     "old (50+). Age in years (4.1, 6.1, 7.1) and the class probabilities (2.4, 4.1) are used "
+     "only as checks on those labels.",
+     "Chapters 2–7, 9",
      "Trained on photographs of real people, so it can be less accurate on synthetic, stylised "
      "or non-frontal faces and for some groups. Gender is binary, race has six coarse classes "
      "and emotion is read from facial expression only. Every demographic value is a "
@@ -83,7 +85,9 @@ _PIPELINE = (
      "Whole-word patterns find which attribute values each prompt <em>requests</em> "
      "(gender, race, age, emotion, job, workplace, continent, status, traits). "
      "“man/woman” and “male/female” are merged. Person counts and face/person area ratios are "
-     "derived from the detector boxes; an image is <em>valid</em> when DeepFace found a face."),
+     "derived from the detector boxes; an image is <em>valid</em> when DeepFace found a face. "
+     "Detected age in years and the class probabilities are averaged over the faces of an "
+     "image."),
     ("5", "Analysis",
      "One builder per chapter turns the records into statistics (next section) and writes "
      "them to a versioned JSON artifact. Chapter 9 reads the other chapters' results and "
@@ -95,16 +99,19 @@ _PIPELINE = (
 
 _CHAPTER_METHODS = (
     ("2 · Coverage", "Counts per prompt mode, attribute value and prompt; detection rate per "
-     "feature and per group (Wilson 95% intervals).",
-     "Shows where the sample is thin, and where the detector fails."),
+     "feature and per group (Wilson 95% intervals). Share of faces whose most likely gender, "
+     "race or emotion class has a probability of at least 60%.",
+     "Shows where the sample is thin, and where the detector fails or is unsure."),
     ("3 · Representation", "Detected gender, race, age and emotion distributions for prompts "
      "that do not request that feature; normalised Shannon entropy; mean pairwise CLIP "
      "distance within a prompt group.",
      "Compare with the other groups, not with an ideal population."),
     ("4 · Adherence", "Share of images whose detected value equals the requested one (the "
      "detector label “latino hispanic” is read as “hispanic”). Confusion matrices per value, "
-     "combinations of attributes.",
-     "A low value can be a model failure or a detector failure."),
+     "combinations of attributes. Two checks: detected age in years per requested age term "
+     "(Hedges' g between neighbouring terms), and adherence recomputed with the class "
+     "probabilities (mean probability of the requested class; confident labels only).",
+     "A low value can be a model failure or a detector failure; the checks help tell which."),
     ("5 · Associations", "Prompt attribute × detected feature contingency tables: Pearson "
      "χ², Cramér's V (raw and bias-corrected, bootstrap interval) and adjusted standardised "
      "residuals per cell (|r| &gt; 1.96 marks a deviating cell). Object prevalence per context "
@@ -112,12 +119,13 @@ _CHAPTER_METHODS = (
      "from their constituent groups.",
      "V measures strength, not direction: read the residuals for direction."),
     ("6 · Counterfactuals", "Matched pairs: prompts identical except one attribute value. "
-     "Differences of unrelated properties (detected demographics, number of people, face "
-     "size, CLIP distance) are tested with paired t-tests, two-proportion tests and "
+     "Differences of unrelated properties (detected demographics, detected age in years, "
+     "number of people, face size, CLIP distance) are tested with paired t-tests, "
+     "two-proportion tests and "
      "Newcombe intervals.",
      "Because the rest of the prompt is fixed, template effects are ruled out."),
     ("7 · Visual features", "Kruskal–Wallis tests (ε²) and Hedges' g for pixel/layout "
-     "statistics; silhouette score of CLIP embeddings against a label-permutation null; "
+     "statistics and for detected age in years (prompts without an age only); silhouette score of CLIP embeddings against a label-permutation null; "
      "cross-validated linear probe that tries to read the group from the embedding.",
      "A group that is linearly separable in CLIP space is shown differently."),
     ("8 · Captions", "Lemmatised vocabulary per group, TF-IDF distinctive words, presence "
@@ -362,8 +370,15 @@ def _limitations(report_data: dict[str, Any]) -> str:
         ("Measurement", measurement_notes + [
             "All demographic and emotion values are <strong>predictions</strong>; error "
             "rates were not measured on this data and may differ across groups.",
-            "Perceived age comes from a regression whose error is several years; age groups "
-            "(young / middle-aged / old) are derived from it and are coarse.",
+            "Perceived age comes from a regression whose error is several years and whose "
+            "values are compressed towards 30–40; age groups (young / middle-aged / old) are "
+            "derived from it and are coarse. Many faces lie within a few years of a cut-off, "
+            "so results in years (4.1, 6.1, 7.1) are more stable than the groups, but the "
+            "years are a relative scale, not literal ages.",
+            "Race and emotion labels are often narrow wins between two classes (confidence "
+            "table in 2.4). The class probabilities are not calibrated, so "
+            "probability-weighted adherence (4.1) is a sensitivity check and not a corrected "
+            "estimate; association tests keep using the most likely class.",
             "Emotion and sentiment words describe appearance, not inner states.",
             "Objects and captions come from models with their own vocabularies and biases; "
             "a word absent from a caption is not proof that the object is absent.",

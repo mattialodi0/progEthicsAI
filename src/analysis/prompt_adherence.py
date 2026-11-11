@@ -8,11 +8,16 @@ from typing import Any
 
 from .general_statistics import (
     ADHERENCE_ATTRIBUTES,
+    AGE_CUTOFFS,
+    AGE_GROUPS,
+    CONFIDENT_PROBABILITY,
     MAIN_ATTRIBUTES,
     _detected_prompt_value,
     _detected_value,
     _record_mode,
 )
+from .preprocessing import PROBABILITY_ATTRIBUTES
+from .stats_utils import finite, hedges_g, mann_whitney_p, mean_summary, rounded
 
 
 def _value(record: dict[str, Any], attribute: str, requested: Any) -> str | None:
@@ -137,6 +142,93 @@ def _combinations(data: list[dict[str, Any]], attributes: list[str]) -> dict[str
     return result
 
 
+def _age_numeric(data: list[dict[str, Any]]) -> dict[str, Any]:
+    """Detected age in years per requested age term, without the age cut-offs.
+
+    The categorical measurement counts a hit only when the detected age falls
+    in the requested bin. This one shows where each term actually lands and
+    whether neighbouring terms are told apart at all.
+    """
+    groups: defaultdict[str, list[float]] = defaultdict(list)
+    baseline: list[float] = []
+    for record in data:
+        age = finite(record.get("detected_age"))
+        if age is None:
+            continue
+        features = record.get("prompt_feats")
+        requested = features.get("age") if isinstance(features, dict) else None
+        if requested is None:
+            baseline.append(age)
+        else:
+            groups[_label("age", requested)].append(age)
+    order = [term for term in AGE_GROUPS if term in groups]
+
+    def summary(values: list[float]) -> dict[str, Any]:
+        return rounded({**mean_summary(values), "values": values})
+
+    separation = []
+    for lower, higher in zip(order, order[1:]):
+        effect = hedges_g(groups[higher], groups[lower])
+        separation.append(rounded({
+            "lower": lower,
+            "higher": higher,
+            "difference": mean_summary(groups[higher])["mean"] - mean_summary(groups[lower])["mean"],
+            "hedges_g": effect["g"],
+            "g_ci_low": effect["ci_low"],
+            "g_ci_high": effect["ci_high"],
+            "p_value": mann_whitney_p(groups[higher], groups[lower]),
+        }))
+    return {
+        "cutoffs": list(AGE_CUTOFFS),
+        "order": order,
+        "groups": {term: summary(groups[term]) for term in order},
+        "not_requested": summary(baseline),
+        "separation": separation,
+    }
+
+
+def _probability_adherence(data: list[dict[str, Any]], attribute: str) -> dict[str, Any]:
+    """Adherence that uses the class probabilities instead of only the top class.
+
+    Per requested value: the usual accuracy, the mean probability given to the
+    requested class (``soft_accuracy``) and the accuracy on images whose top
+    class is confident. Values the detector has no class for are left out.
+    """
+    rows: defaultdict[str, list[tuple[bool, float, float]]] = defaultdict(list)
+    for record in data:
+        features = record.get("prompt_feats")
+        requested = features.get(attribute) if isinstance(features, dict) else None
+        probabilities = (record.get("face_probs") or {}).get(attribute)
+        detected = _detected_value(record, attribute)
+        if requested is None or detected is None or not probabilities:
+            continue
+        requested_label = _label(attribute, requested)
+        if requested_label not in probabilities:
+            continue
+        rows[requested_label].append((
+            _label(attribute, detected) == requested_label,
+            probabilities[requested_label],
+            max(probabilities.values()),
+        ))
+
+    def summary(items: list[tuple[bool, float, float]]) -> dict[str, Any]:
+        confident = [correct for correct, _, top in items if top >= CONFIDENT_PROBABILITY]
+        return rounded({
+            "n": len(items),
+            "accuracy": sum(correct for correct, _, _ in items) / len(items),
+            "soft_accuracy": sum(probability for _, probability, _ in items) / len(items),
+            "n_confident": len(confident),
+            "confident_accuracy": sum(confident) / len(confident) if confident else None,
+        })
+
+    everything = [item for items in rows.values() for item in items]
+    return {
+        "threshold": CONFIDENT_PROBABILITY,
+        "overall": summary(everything) if everything else None,
+        "by_value": {value: summary(items) for value, items in sorted(rows.items())},
+    }
+
+
 def prompt_adherence(data: list[dict[str, Any]], attributes: list[str], config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Precompute adherence using the facial attributes supported by detectors."""
     del attributes
@@ -154,4 +246,7 @@ def prompt_adherence(data: list[dict[str, Any]], attributes: list[str], config: 
                            for mode, records in sorted(modes.items())},
         "by_demographic_category": _by_category(data, detectable),
         "combinations": _combinations(data, detectable),
+        "age_numeric": _age_numeric(data),
+        "probabilities": {attribute: _probability_adherence(data, attribute)
+                          for attribute in PROBABILITY_ATTRIBUTES},
     }

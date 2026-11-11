@@ -74,6 +74,61 @@ def render_chapter_two(coverage: dict[str, Any]) -> str:
         if missing else ""
     )
 
+    confidence = coverage.get("classifier_confidence") or {}
+    confidence_attributes = {
+        name: item for name, item in (confidence.get("attributes") or {}).items()
+        if item.get("n")
+    }
+    threshold = f"{100 * numeric(confidence.get('threshold'), 0.6):.0f}%"
+
+    def confidence_row(name: str, item: dict[str, Any]) -> str:
+        percent = 100 * numeric(item.get("confident")) / item["n"] if item.get("n") else 0
+        return (
+            f"<tr><th scope='row'>{html.escape(label(name))}</th><td>{item.get('n', 0)}</td>"
+            f"<td>{100 * numeric(item.get('median')):.0f}%</td>"
+            f"<td><div class='{_bar_class(percent)}' role='img' aria-label='{percent:.1f}% "
+            f"confident'><span style='width:{percent:.1f}%'></span></div></td>"
+            f"<td>{percent:.1f}%</td></tr>"
+        )
+
+    def confidence_table(first_column: str, rows: dict[str, Any]) -> str:
+        return (
+            f"<table><thead><tr><th>{first_column}</th><th>Images with a face</th>"
+            f"<th>Median top probability</th><th>Confident labels (≥ {threshold})</th>"
+            "<th>Percent</th></tr></thead><tbody>"
+            + "".join(confidence_row(name, item) for name, item in rows.items())
+            + "</tbody></table>"
+        )
+
+    confidence_html = ""
+    if confidence_attributes:
+        # Break down the attribute whose labels are least often confident.
+        weakest = min(confidence_attributes, key=lambda name: (
+            numeric(confidence_attributes[name].get("confident")) / confidence_attributes[name]["n"]))
+        breakdown = {name: item for name, item in
+                     (confidence_attributes[weakest].get("by_requested") or {}).items()
+                     if item.get("n")}
+        confidence_html = (
+            "<h4>Classifier confidence</h4>"
+            "<p>A detected value can be available and still uncertain. For gender, race and "
+            "emotion the face model returns a probability per class and the report uses the "
+            "most likely one; the table shows how often that class is a clear winner.</p>"
+            + guide(
+                look="An attribute or a requested group with few confident labels: its "
+                     "detected values are close to a guess between two classes, so adherence "
+                     "and bias results about it deserve less weight (chapter 4 repeats the "
+                     "adherence check without the uncertain labels).",
+                caution="The probabilities are not calibrated: a 60% label is not right "
+                        "exactly 60% of the time. Use the shares to compare attributes and "
+                        "groups, not as error rates.",
+            )
+            + confidence_table("Feature", confidence_attributes)
+            + (f"<h4>{html.escape(label(weakest))} confidence by requested "
+               f"{html.escape(weakest)}</h4>"
+               + confidence_table(f"Requested {html.escape(weakest)}", breakdown)
+               if len(breakdown) > 1 else "")
+        )
+
     prompt_counts = coverage.get("prompt_images", {})
     per_prompt = [numeric(value) for value in prompt_counts.values()]
     if per_prompt and min(per_prompt) == max(per_prompt):
@@ -167,5 +222,6 @@ def render_chapter_two(coverage: dict[str, Any]) -> str:
     )}
     {detection_table}
     {missing_html}
+    {confidence_html}
   </section>
 """

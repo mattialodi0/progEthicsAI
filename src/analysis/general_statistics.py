@@ -8,6 +8,11 @@ from typing import Any
 
 MAIN_ATTRIBUTES = ("gender", "race", "age", "emotion")
 ADHERENCE_ATTRIBUTES = MAIN_ATTRIBUTES
+# Age groups in increasing order, and the detected ages (years) that separate them.
+AGE_GROUPS = ("young", "middle-aged", "old")
+AGE_CUTOFFS = (30, 50)
+# A detected class is called confident when its probability reaches this value.
+CONFIDENT_PROBABILITY = 0.6
 
 
 def _percentage(count: int, total: int) -> float:
@@ -27,15 +32,22 @@ def _distribution(values: list[str], total: int | None = None) -> dict[str, Any]
 def _age_label(age: Any) -> str | None:
     if isinstance(age, str):
         value = age.strip().lower()
-        if value in {"young", "middle-aged", "old"}:
+        if value in AGE_GROUPS:
             return value
     if isinstance(age, (int, float)) and not isinstance(age, bool):
-        if age < 30:
+        if age < AGE_CUTOFFS[0]:
             return "young"
-        if age < 50:
+        if age < AGE_CUTOFFS[1]:
             return "middle-aged"
         return "old"
     return None
+
+
+def _top_probability(record: dict[str, Any], attribute: str) -> float | None:
+    """Probability of the most likely class of a face attribute (see preprocessing)."""
+    probabilities = record.get("face_probs")
+    scores = probabilities.get(attribute) if isinstance(probabilities, dict) else None
+    return max(scores.values()) if isinstance(scores, dict) and scores else None
 
 
 def _canonical_demographic_value(attribute: str, value: Any) -> str | None:

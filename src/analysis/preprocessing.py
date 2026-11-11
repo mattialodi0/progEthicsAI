@@ -23,6 +23,14 @@ toxics_traits = ('criminal', 'gang member', 'uneducated person',
           'terrorist', 'manipulative person')
 positives_traits = ('intelligent', 'trustworthy', 'professional', 'hardworking')
 
+# Face attributes for which the detector returns a probability per class.
+PROBABILITY_ATTRIBUTES = ('gender', 'race', 'emotion')
+# Detector class names -> the labels used in the prompts.
+FACE_LABEL_ALIASES = {
+    'gender': {'man': 'male', 'woman': 'female'},
+    'race': {'latino hispanic': 'hispanic'},
+}
+
 
 def _compile_vocabulary(values: Iterable[str]) -> tuple[tuple[str, re.Pattern[str]], ...]:
     """Compile whole-word patterns once, preserving the vocabulary order."""
@@ -87,15 +95,55 @@ def _person_features(item: dict[str, Any]) -> tuple[int, float]:
     return len(person_boxes), ratio
 
 
-def _face_features(item: dict[str, Any]) -> tuple[float, bool]:
+def _valid_faces(item: dict[str, Any]) -> list[dict[str, Any]]:
     facial_features = item.get("facial_feats", [])
     if not isinstance(facial_features, (list, tuple)):
-        facial_features = []
-
-    valid_faces = [
+        return []
+    return [
         feature for feature in facial_features
         if isinstance(feature, dict) and feature.get("face_confidence", -1) != -1
     ]
+
+
+def _face_estimates(item: dict[str, Any]) -> tuple[float | None, dict[str, dict[str, float]]]:
+    """Mean detected age and mean class probabilities over the valid faces.
+
+    Probabilities are on a 0-1 scale and use the same labels as the prompts
+    ("female", "hispanic"), so they can be compared with requested values.
+    """
+    faces = _valid_faces(item)
+    ages = [
+        float(face["age"]) for face in faces
+        if isinstance(face.get("age"), (int, float)) and not isinstance(face.get("age"), bool)
+    ]
+    probabilities: dict[str, dict[str, float]] = {}
+    for attribute in PROBABILITY_ATTRIBUTES:
+        totals: dict[str, float] = {}
+        used = 0
+        for face in faces:
+            scores = face.get(attribute)
+            if not isinstance(scores, dict):
+                continue
+            clean = {
+                str(name).strip().lower(): float(score) for name, score in scores.items()
+                if isinstance(score, (int, float)) and not isinstance(score, bool) and score >= 0
+            }
+            scale = sum(clean.values())
+            if not scale:
+                continue
+            used += 1
+            for name, score in clean.items():
+                name = FACE_LABEL_ALIASES.get(attribute, {}).get(name, name)
+                totals[name] = totals.get(name, 0.0) + score / scale
+        if used:
+            probabilities[attribute] = {
+                name: round(total / used, 6) for name, total in sorted(totals.items())
+            }
+    return (sum(ages) / len(ages) if ages else None), probabilities
+
+
+def _face_features(item: dict[str, Any]) -> tuple[float, bool]:
+    valid_faces = _valid_faces(item)
     image_area = _image_area(item)
     face_area = 0.0
     for feature in valid_faces:
@@ -117,6 +165,8 @@ def preprocess_data(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
         gender, age, race, emotion, job, and other relevant features.
     - add features for n_people, person_area_ratio, and face_area_ratio
     - add a valid feature
+    - add detected_age (years) and face_probs (class probabilities of gender,
+      race and emotion), both averaged over the detected faces
     Args:
         data: The data to preprocess.
 
@@ -169,6 +219,7 @@ def preprocess_data(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
         result["person_area_ratio"] = person_area_ratio
         result["face_area_ratio"] = face_area_ratio
         result["valid"] = valid
+        result["detected_age"], result["face_probs"] = _face_estimates(item)
         preprocessed.append(result)
 
     return preprocessed

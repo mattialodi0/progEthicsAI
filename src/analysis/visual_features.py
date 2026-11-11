@@ -9,8 +9,11 @@ from .stats_utils import hedges_g, kruskal, mann_whitney_p, mean_summary, rounde
 
 IMAGE_FEATURES = (
     "brightness", "saturation", "contrast", "n_people",
-    "person_area_ratio", "face_area_ratio",
+    "person_area_ratio", "face_area_ratio", "detected_age",
 )
+# Features that one prompt attribute requests directly. Images whose prompt
+# sets that attribute are left out, so groups compare the model's default.
+REQUESTED_BY = {"detected_age": "age"}
 MAX_DISTANCE_POINTS = 600
 # Label permutations behind the silhouette null distribution.
 SILHOUETTE_PERMUTATIONS = 40
@@ -31,6 +34,10 @@ def _feature_value(record: dict[str, Any], feature: str) -> float | None:
     if feature in {"brightness", "saturation", "contrast"}:
         metrics = record.get("image_metrics")
         return _number(metrics.get(feature) if isinstance(metrics, dict) else None)
+    requested_by = REQUESTED_BY.get(feature)
+    prompt_feats = record.get("prompt_feats")
+    if requested_by and isinstance(prompt_feats, dict) and prompt_feats.get(requested_by) is not None:
+        return None
     return _number(record.get(feature))
 
 
