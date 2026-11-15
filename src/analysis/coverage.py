@@ -7,13 +7,13 @@ import json
 import re
 from typing import Any
 
-from .general_statistics import CONFIDENT_PROBABILITY, _top_probability
+from .matching import word_pattern
 from .preprocessing import PROBABILITY_ATTRIBUTES
+from .records import CONFIDENT_PROBABILITY, top_probability
 
 
 def _matches(prompt: str, value: str) -> bool:
-    pattern = r"(?<!\w)" + re.escape(value).replace(r"\ ", r"\s+") + r"(?!\w)"
-    return re.search(pattern, prompt, flags=re.IGNORECASE) is not None
+    return re.search(word_pattern(value), prompt, flags=re.IGNORECASE) is not None
 
 
 def _present(value: Any) -> bool:
@@ -115,7 +115,7 @@ def _classifier_confidence(data: list[dict[str, Any]]) -> dict[str, Any]:
         for record in data:
             if not isinstance(record, dict):
                 continue
-            top = _top_probability(record, attribute)
+            top = top_probability(record, attribute)
             if top is None:
                 continue
             overall.append(top)

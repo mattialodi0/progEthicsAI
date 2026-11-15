@@ -1,0 +1,12 @@
+    .ch8-terms { display: grid; gap: .6rem; grid-template-columns:
+      repeat(auto-fit, minmax(78px, 1fr)); margin-top: .5rem; }
+    .ch8-terms h5 { color: #52606d; font-size: .78rem; letter-spacing: .04em;
+      margin: 0 0 .3rem; text-transform: uppercase; }
+    .ch8-terms ol { font-size: .9rem; margin: 0; padding-left: 1.2rem; }
+    .ch8-terms li { margin-bottom: .2rem; overflow-wrap: anywhere; }
+    .ch8-terms .note { display: block; font-size: .75rem; }
+    .ch8-controls { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; margin: .75rem 0; }
+    .ch8-table-wrap { overflow-x: auto; }
+    .ch8-table-wrap td, .ch8-table-wrap th { font-size: .88rem; white-space: nowrap; }
+    .ch8-table-wrap td.ch8-words { white-space: normal; min-width: 160px; }
+    .ch8-wordlist { font-size: .9rem; line-height: 1.6; overflow-wrap: anywhere; }

@@ -1,0 +1,14 @@
+    .method-steps { counter-reset: none; display: grid; gap: .8rem;
+      grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); margin: 1rem 0; }
+    .method-step { background: var(--accent-soft); border-radius: 8px; padding: .8rem 1rem; }
+    .method-step h4 { margin: 0 0 .3rem; }
+    .method-step .step-no { background: var(--accent); border-radius: 50%; color: #fff;
+      display: inline-block; font-size: .8rem; height: 1.4rem; line-height: 1.4rem;
+      margin-right: .4rem; text-align: center; width: 1.4rem; }
+    .method-step p { font-size: .93rem; margin: 0; }
+    .model-table td, .model-table th { font-size: .9rem; }
+    .model-table td:first-child { white-space: nowrap; }
+    .method-limit { border-left: 4px solid var(--caution); margin: .8rem 0;
+      padding: .1rem 0 .1rem 1rem; }
+    .method-limit h4 { margin: 0 0 .25rem; }
+    .method-limit p { margin: .2rem 0; }

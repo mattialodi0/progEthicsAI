@@ -35,12 +35,17 @@ notebooks/            Colab notebooks: imge_generation, feature_extraction, feat
 src/
   run_config.py       shared config.json handling (atomic, resumable, preserves manual keys)
   generation/         prompt_generator.py, generate_images.py, models/ (one adapter per model)
-  extraction/         extract_features.py
-  analysis/           analyzer.py + chapters.py and the statistics modules
-                      (coverage, bias, counterfactual, prompt adherence, embeddings,
-                       visual features, synthesis, preprocessing, ...)
-  report/             report_builder.py, one report_ch_*.py per chapter, insights/explain texts
-                      readme.md: design notes for the report structure
+  extraction/         extract_features.py (CLI), stages.py (one class per model),
+                      checkpoints.py (resumable per-stage checkpoints and the merge)
+  analysis/           analyzer.py (CLI) + chapters.py (one data builder per chapter)
+                      preprocessing.py, records.py (record accessors), stats_utils.py,
+                      one module or package per chapter: coverage (2), diversity (3),
+                      prompt_adherence (4), bias/ (5), counterfactual/ (6),
+                      visual_features + embedding_space (7), captions/ (8), synthesis/ (9)
+  report/             report_builder.py (CLI), page.py (page shell and index),
+                      chapters/ (one renderer per chapter), insights/ (data-driven
+                      observations), explain.py (shared HTML blocks),
+                      static/ (CSS and the JavaScript of the interactive charts)
 requirements.txt          local analysis / report dependencies
 requirements-colab-generation.txt  GPU dependencies for step 2 (generation)
 requirements-colab.txt    GPU dependencies for step 3 (extraction)

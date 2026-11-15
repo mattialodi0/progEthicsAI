@@ -1,4 +1,5 @@
-"""Prompt-adherence measurements used by the general statistics facade."""
+"""Chapter 4 data: does the image show the gender, race, age and emotion the
+prompt requested?"""
 
 from __future__ import annotations
 
@@ -6,25 +7,24 @@ from collections import Counter, defaultdict
 from itertools import combinations
 from typing import Any
 
-from .general_statistics import (
-    ADHERENCE_ATTRIBUTES,
+from .preprocessing import PROBABILITY_ATTRIBUTES
+from .records import (
     AGE_CUTOFFS,
     AGE_GROUPS,
     CONFIDENT_PROBABILITY,
     MAIN_ATTRIBUTES,
-    _detected_prompt_value,
-    _detected_value,
-    _record_mode,
+    detected_prompt_value,
+    detected_value,
+    record_mode,
 )
-from .preprocessing import PROBABILITY_ATTRIBUTES
 from .stats_utils import finite, hedges_g, mann_whitney_p, mean_summary, rounded
 
 
-def _value(record: dict[str, Any], attribute: str, requested: Any) -> str | None:
+def adherence_value(record: dict[str, Any], attribute: str, requested: Any) -> str | None:
     if requested is None:
         return None
-    return (_detected_value(record, attribute) if attribute in MAIN_ATTRIBUTES
-            else _detected_prompt_value(record, requested))
+    return (detected_value(record, attribute) if attribute in MAIN_ATTRIBUTES
+            else detected_prompt_value(record, requested))
 
 
 LABEL_ALIASES = {
@@ -34,10 +34,25 @@ LABEL_ALIASES = {
 }
 
 
-def _label(attribute: str, value: Any) -> str:
+def adherence_label(attribute: str, value: Any) -> str:
     """Comparable label: prompt words and detector labels on one vocabulary."""
     label = str(value).strip().lower()
     return LABEL_ALIASES.get(attribute, {}).get(label, label)
+
+
+def _confusion(
+    matrix: dict[str, Counter[str]],
+) -> tuple[list[str], dict[str, dict[str, int]], dict[str, dict[str, float]]]:
+    """Return (labels, counts, row shares) of a requested x detected matrix."""
+    labels = sorted(set(matrix) | {item for row in matrix.values() for item in row})
+    counts = {row: {column: matrix[row].get(column, 0) for column in labels} for row in labels}
+    shares = {
+        row: {column: round(count / sum(counts[row].values()), 6)
+              if sum(counts[row].values()) else 0.0
+              for column, count in counts[row].items()}
+        for row in labels
+    }
+    return labels, counts, shares
 
 
 def _measurement(records: list[dict[str, Any]], attribute: str) -> dict[str, Any]:
@@ -49,25 +64,19 @@ def _measurement(records: list[dict[str, Any]], attribute: str) -> dict[str, Any
         if requested is None:
             continue
         requested_count += 1
-        requested_label = _label(attribute, requested)
-        detected = _value(record, attribute, requested)
+        requested_label = adherence_label(attribute, requested)
+        detected = adherence_value(record, attribute, requested)
         if detected is None:
             unmatched += 1
             continue
-        detected_label = _label(attribute, detected)
+        detected_label = adherence_label(attribute, detected)
         matrix[requested_label][detected_label] += 1
         total += 1
         correct += int(requested_label == detected_label)
-    labels = sorted(set(matrix) | {item for row in matrix.values() for item in row})
-    counts = {row: {column: matrix[row].get(column, 0) for column in labels} for row in labels}
+    labels, counts, shares = _confusion(matrix)
     return {
         "labels": labels,
-        "matrix": {
-            row: {column: round(count / sum(counts[row].values()), 6)
-                  if sum(counts[row].values()) else 0.0
-                  for column, count in counts[row].items()}
-            for row in labels
-        },
+        "matrix": shares,
         "counts": counts,
         "total": total,
         "accuracy": round(correct / total, 6) if total else None,
@@ -120,22 +129,22 @@ def _combinations(data: list[dict[str, Any]], attributes: list[str]) -> dict[str
             requested = (features.get(first), features.get(second))
             if None in requested:
                 continue
-            requested_label = " + ".join((_label(first, requested[0]), _label(second, requested[1])))
-            detected = (_value(record, first, requested[0]), _value(record, second, requested[1]))
+            requested_label = " + ".join((adherence_label(first, requested[0]),
+                                          adherence_label(second, requested[1])))
+            detected = (adherence_value(record, first, requested[0]),
+                        adherence_value(record, second, requested[1]))
             if None in detected:
                 unmatched += 1
                 continue
-            detected_label = " + ".join((_label(first, detected[0]), _label(second, detected[1])))
+            detected_label = " + ".join((adherence_label(first, detected[0]),
+                                         adherence_label(second, detected[1])))
             matrix[requested_label][detected_label] += 1
             total += 1
             correct += int(requested_label == detected_label)
-        labels = sorted(set(matrix) | {item for row in matrix.values() for item in row})
-        counts = {row: {column: matrix[row].get(column, 0) for column in labels} for row in labels}
+        labels, counts, shares = _confusion(matrix)
         result[f"{first} + {second}"] = {
             "attributes": [first, second], "labels": labels, "counts": counts,
-            "matrix": {row: {column: round(count / sum(counts[row].values()), 6)
-                             if sum(counts[row].values()) else 0.0
-                             for column, count in counts[row].items()} for row in labels},
+            "matrix": shares,
             "total": total, "accuracy": round(correct / total, 6) if total else None,
             "unmatched": unmatched,
         }
@@ -160,7 +169,7 @@ def _age_numeric(data: list[dict[str, Any]]) -> dict[str, Any]:
         if requested is None:
             baseline.append(age)
         else:
-            groups[_label("age", requested)].append(age)
+            groups[adherence_label("age", requested)].append(age)
     order = [term for term in AGE_GROUPS if term in groups]
 
     def summary(values: list[float]) -> dict[str, Any]:
@@ -199,14 +208,14 @@ def _probability_adherence(data: list[dict[str, Any]], attribute: str) -> dict[s
         features = record.get("prompt_feats")
         requested = features.get(attribute) if isinstance(features, dict) else None
         probabilities = (record.get("face_probs") or {}).get(attribute)
-        detected = _detected_value(record, attribute)
+        detected = detected_value(record, attribute)
         if requested is None or detected is None or not probabilities:
             continue
-        requested_label = _label(attribute, requested)
+        requested_label = adherence_label(attribute, requested)
         if requested_label not in probabilities:
             continue
         rows[requested_label].append((
-            _label(attribute, detected) == requested_label,
+            adherence_label(attribute, detected) == requested_label,
             probabilities[requested_label],
             max(probabilities.values()),
         ))
@@ -229,14 +238,15 @@ def _probability_adherence(data: list[dict[str, Any]], attribute: str) -> dict[s
     }
 
 
-def prompt_adherence(data: list[dict[str, Any]], attributes: list[str], config: dict[str, Any] | None = None) -> dict[str, Any]:
+def prompt_adherence(
+    data: list[dict[str, Any]], config: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Precompute adherence using the facial attributes supported by detectors."""
-    del attributes
     config = config or {}
-    detectable = list(ADHERENCE_ATTRIBUTES)
+    detectable = list(MAIN_ATTRIBUTES)
     modes: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
     for record in data:
-        modes[_record_mode(record, config)].append(record)
+        modes[record_mode(record, config)].append(record)
     return {
         "attributes": detectable,
         "by_attribute": {attribute: _measurement(data, attribute) for attribute in detectable},

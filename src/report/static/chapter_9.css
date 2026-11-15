@@ -1,0 +1,31 @@
+    .answer-grid { grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); }
+    .answer-head { align-items: center; display: flex; flex-wrap: wrap; gap: .5rem;
+      justify-content: space-between; }
+    .answer-head h4 { margin: 0; }
+    .answer-list { padding-left: 1.2rem; } .answer-list li { margin-bottom: .6rem; }
+    .answer-list .stat-line { color: var(--muted); font-size: .82rem; margin-top: .15rem; }
+    .finding-card { display: grid; gap: 1rem; grid-template-columns: 2.4rem minmax(0, 1fr); }
+    .finding-rank { align-items: center; background: var(--finding-bg); border-radius: 50%;
+      color: var(--finding); display: flex; font-size: 1.1rem; font-weight: 800; height: 2.4rem;
+      justify-content: center; width: 2.4rem; }
+    .finding-statement { font-size: 1.05rem; font-weight: 600; margin: 0 0 .4rem; }
+    .finding-body .stat-line { color: var(--muted); }
+    .evidence-matrix th, .evidence-matrix td { text-align: center; white-space: nowrap; }
+    .evidence-matrix th[scope=row] { text-align: left; }
+    .evidence-matrix thead th { font-size: .78rem; vertical-align: bottom; }
+    .matrix-source { color: var(--muted); display: block; font-size: .68rem; font-weight: 400; }
+    .matrix-cell { border-left: 1px solid #fff; font-size: .85rem; }
+    .matrix-band { display: block; font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; }
+    .matrix-mark { font-weight: 700; }
+    .tone-high { background: #f9d7d3; color: #9b2c1f; }
+    .tone-mid { background: #fdebd0; color: #8a4b00; }
+    .tone-low { background: #e0ecf9; color: #1f4f82; }
+    .tone-neutral, .tone-none { background: #f4f6f8; color: var(--muted); }
+    .matrix-context { opacity: .75; font-style: italic; }
+    .matrix-na { color: #bcccdc; }
+    .matrix-convergence { font-weight: 800; }
+    .ch9-filters { position: sticky; top: 0; z-index: 5; }
+    #ch9-table table { font-size: .86rem; }
+    #ch9-table button.sort { background: none; border: 0; color: var(--muted); cursor: pointer;
+      font: inherit; font-weight: 700; padding: 0; }
+    .tier-list dt { font-weight: 700; } .tier-list dd { margin: 0 0 .4rem; }

@@ -1,11 +1,16 @@
 
+"""Normalize raw image metadata before analysis: prompt attributes, framing
+and face estimates are added to every record (see ``preprocess_data``)."""
+
 from __future__ import annotations
 
 import re
 from typing import Any, Iterable
 
+from .matching import word_pattern
 
-visual_mode = ('image', 'photograph', 'portrait', 'picture')
+
+# Prompt vocabularies recognized in the prompt text (see ``prompt_generator``).
 jobs = ('doctor', 'nurse', 'engineer', 'teacher', 'artist', 'scientist', 'chef', 'pilot',
         'writer', 'musician', 'athlete', 'politician', 'soldier')
         # 'farmer', 'mechanic', 'secretary
@@ -20,7 +25,7 @@ emotions = ('happy', 'sad', 'angry', 'calm', 'bored', 'nervous')
 continents = ('Europe', 'Asia', 'Africa', 'North America', 'South America')
 statuses = ('successful', 'homeless', 'wealthy', 'poor')
 toxics_traits = ('criminal', 'gang member', 'uneducated person',
-          'terrorist', 'manipulative person')
+                 'terrorist', 'manipulative person')
 positives_traits = ('intelligent', 'trustworthy', 'professional', 'hardworking')
 
 # Face attributes for which the detector returns a probability per class.
@@ -35,10 +40,7 @@ FACE_LABEL_ALIASES = {
 def _compile_vocabulary(values: Iterable[str]) -> tuple[tuple[str, re.Pattern[str]], ...]:
     """Compile whole-word patterns once, preserving the vocabulary order."""
     return tuple(
-        (value, re.compile(
-            r"(?<!\w)" + re.escape(value).replace(r"\ ", r"\s+") + r"(?!\w)",
-            re.IGNORECASE,
-        ))
+        (value, re.compile(word_pattern(value), re.IGNORECASE))
         for value in values
     )
 

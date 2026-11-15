@@ -14,11 +14,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Callable
 
-from .bias_statistics import collect_bias_stats
-from .counterfactual_statistics import build_counterfactual_analysis
+from .bias import collect_bias_stats
+from .counterfactual import build_counterfactual_analysis
 from .coverage import build_coverage
-from .general_statistics import demographic_composition, diversity_metrics, invalid_images
-from .other_statistics import build_caption_analysis
+from .diversity import demographic_composition, diversity_metrics, invalid_images
+from .captions import build_caption_analysis
 from .prompt_adherence import prompt_adherence
 from .prompt_statistics import collect_prompt_stats
 from .synthesis import build_synthesis
@@ -73,7 +73,7 @@ def build_prompt_adherence(
     data: list[dict[str, Any]], config: dict[str, Any]
 ) -> dict[str, Any]:
     """Chapter 4: requested-versus-detected attribute adherence."""
-    return prompt_adherence(data, [], config)
+    return prompt_adherence(data, config)
 
 
 CHAPTER_BUILDERS: dict[str, ChapterBuilder] = {

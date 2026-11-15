@@ -1,21 +1,25 @@
+"""Prompt counts used by the executive summary (chapter 1)."""
+
 from __future__ import annotations
+
 from collections import Counter, defaultdict
 import re
 from typing import Any
 
+from .matching import word_pattern
+
 
 def _pattern(value: str) -> re.Pattern[str]:
     """Compile a whole-word prompt-value matcher."""
-    return re.compile(
-        r"(?<!\w)" + re.escape(value).replace(r"\ ", r"\s+") + r"(?!\w)",
-        re.IGNORECASE,
-    )
+    return re.compile(word_pattern(value), re.IGNORECASE)
+
 
 def _prompt(record: dict[str, Any]) -> str | None:
     value = record.get("prompt")
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None
+
 
 def collect_prompt_stats(
     data: list[dict[str, Any]],
@@ -36,7 +40,7 @@ def collect_prompt_stats(
     prompts = [_prompt(record) for record in records]
     known_prompts = [prompt for prompt in prompts if prompt is not None]
     unique_prompts = set(known_prompts)
-    
+
     configured_vocabularies = config.get("prompt_variables", {})
     vocabularies = (
         {

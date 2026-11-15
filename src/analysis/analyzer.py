@@ -70,6 +70,30 @@ def _usable_previous(previous: dict[str, Any] | None) -> dict[str, Any] | None:
     return previous
 
 
+def _build_meta(duration: float, config_fingerprint: str, data_fingerprint: str) -> dict[str, Any]:
+    """Build metadata of one chapter: when, how long, and from which inputs."""
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "duration_seconds": round(duration, 2),
+        "config_fingerprint": config_fingerprint,
+        "data_fingerprint": data_fingerprint,
+    }
+
+
+def _stale_chapters(
+    chapter_meta: dict[str, Any], built: list[str], config_fingerprint: str, data_fingerprint: str
+) -> list[str]:
+    """Chapters kept from a previous artifact that was built from other inputs."""
+    return [
+        chapter for chapter, meta in chapter_meta.items()
+        if chapter not in DERIVED_BUILDERS
+        and chapter not in built and (
+            meta.get("config_fingerprint") != config_fingerprint
+            or meta.get("data_fingerprint") != data_fingerprint
+        )
+    ]
+
+
 def analyze(
     data: list[dict[str, Any]],
     config: dict[str, Any],
@@ -120,12 +144,7 @@ def analyze(
         start = time.perf_counter()
         report_data[chapter] = CHAPTER_BUILDERS[chapter](preprocessed_data, config)
         duration = time.perf_counter() - start
-        chapter_meta[chapter] = {
-            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "duration_seconds": round(duration, 2),
-            "config_fingerprint": config_fingerprint,
-            "data_fingerprint": data_fingerprint,
-        }
+        chapter_meta[chapter] = _build_meta(duration, config_fingerprint, data_fingerprint)
         if verbose > 0:
             print(f"  {chapter} ({CHAPTER_TITLES[chapter]}): {duration:.1f}s")
 
@@ -135,23 +154,13 @@ def analyze(
         report_data[chapter] = builder(report_data, config)
         duration = time.perf_counter() - start
         chapter_meta[chapter] = {
-            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "duration_seconds": round(duration, 2),
-            "config_fingerprint": config_fingerprint,
-            "data_fingerprint": data_fingerprint,
+            **_build_meta(duration, config_fingerprint, data_fingerprint),
             "derived": True,
         }
         if verbose > 0:
             print(f"  {chapter} ({CHAPTER_TITLES[chapter]}): {duration:.1f}s")
 
-    stale = [
-        chapter for chapter, meta in chapter_meta.items()
-        if chapter not in DERIVED_BUILDERS
-        and chapter not in to_build and (
-            meta.get("config_fingerprint") != config_fingerprint
-            or meta.get("data_fingerprint") != data_fingerprint
-        )
-    ]
+    stale = _stale_chapters(chapter_meta, to_build, config_fingerprint, data_fingerprint)
     if stale:
         warnings.warn(
             "These chapters were kept from the previous artifact but were built "

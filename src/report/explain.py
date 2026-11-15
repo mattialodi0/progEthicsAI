@@ -34,6 +34,15 @@ def esc(value: Any) -> str:
     return html.escape(str(value))
 
 
+def number(value: Any) -> float | None:
+    """Return ``value`` as a float, or ``None`` when it is missing or NaN."""
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if result == result else None
+
+
 def pct(value: Any, digits: int = 1) -> str:
     """Format a 0-1 proportion as a percentage."""
     try:
@@ -97,11 +106,11 @@ def guide(
     return f'<div class="guide suggestion">{"".join(parts)}</div>' if parts else ""
 
 
-def chapter_header(number: int, title: str, question: str, intro: str) -> str:
+def chapter_header(chapter: int, title: str, question: str, intro: str) -> str:
     """Return the chapter eyebrow, title, key question and introduction."""
     return (
-        f'<div class="eyebrow">Chapter {number}</div>'
-        f'<h2 id="chapter-{number}">{esc(title)}</h2>'
+        f'<div class="eyebrow">Chapter {chapter}</div>'
+        f'<h2 id="chapter-{chapter}">{esc(title)}</h2>'
         f'<p class="question"><span>Key question</span>{question}</p>'
         f'<div class="intro">{intro}</div>'
     )

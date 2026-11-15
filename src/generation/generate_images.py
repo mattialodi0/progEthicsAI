@@ -35,7 +35,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from ..run_config import PROMPT_MODES, RunConfig, environment_info, now_iso, setup_logging
+from ..run_config import RunConfig, environment_info, now_iso, setup_logging
 from .models import MODELS, DiffusersGenerator, ImageGenerator  # noqa: F401 (re-exported)
 
 log = logging.getLogger("generation")
@@ -102,6 +102,61 @@ def parse_prompt_files(entries: list[str] | None) -> dict[int, str]:
     return files
 
 
+def _pending_jobs(
+    jobs: list[dict[str, Any]], existing: dict[str, dict[str, Any]], images_dir: Path
+) -> list[dict[str, Any]]:
+    """Jobs without a successful record and image from a previous run."""
+    return [
+        job for job in jobs
+        if not (job["name"] in existing and not existing[job["name"]].get("generation_failed")
+                and (images_dir / f"{job['name']}.png").exists())
+    ]
+
+
+def _record_start(
+    config: RunConfig,
+    generator: ImageGenerator,
+    prompt_files: dict[int, str],
+    jobs: list[dict[str, Any]],
+    pending: int,
+    seed: int,
+    batch_size: int,
+) -> None:
+    """Write the model, settings and progress of a (resumed) run to config.json."""
+    config.update(
+        T2I_model=generator.name,
+        model_version=generator.version,
+        generation_settings={**generator.settings, "seed_base": seed, "batch_size": batch_size},
+        audit_date=config.get("audit_date") or now_iso()[:10],
+    )
+    config.update_section(
+        "generation",
+        status="running",
+        started_at=config.section("generation").get("started_at") or now_iso(),
+        resumed_at=now_iso(),
+        prompt_files={str(mode): str(path) for mode, path in prompt_files.items()},
+        prompts_per_mode={
+            str(mode): sum(job["mode"] == mode for job in jobs) for mode in prompt_files
+        },
+        total=len(jobs),
+        done=len(jobs) - pending,
+        failed=0,
+        environment=environment_info(),
+    )
+
+
+def _generate_batch(
+    generator: ImageGenerator, batch: list[dict[str, Any]], seeds: list[int]
+) -> tuple[list[Any], list[str | None]]:
+    """Images of one batch, or ``None`` images with the error message on failure."""
+    try:
+        images = generator.generate([job["prompt"] for job in batch], seeds)
+        return images, [None] * len(batch)
+    except Exception as error:  # one bad batch must not lose the whole run
+        log.exception("Generation failed for %s", [job["name"] for job in batch])
+        return [None] * len(batch), [f"{type(error).__name__}: {error}"] * len(batch)
+
+
 # --------------------------------------------------------------------------
 # Main loop
 # --------------------------------------------------------------------------
@@ -125,33 +180,9 @@ def run(
     if not jobs:
         raise SystemExit("No prompts found. Check --prompts / the assets/*_prompts.txt files.")
 
-    existing = read_records(metadata_path)
-    todo = [
-        job for job in jobs
-        if not (job["name"] in existing and not existing[job["name"]].get("generation_failed")
-                and (images_dir / f"{job['name']}.png").exists())
-    ]
+    todo = _pending_jobs(jobs, read_records(metadata_path), images_dir)
     settings = generator.settings
-    config.update(
-        T2I_model=generator.name,
-        model_version=generator.version,
-        generation_settings={**settings, "seed_base": seed, "batch_size": batch_size},
-        audit_date=config.get("audit_date") or now_iso()[:10],
-    )
-    config.update_section(
-        "generation",
-        status="running",
-        started_at=config.section("generation").get("started_at") or now_iso(),
-        resumed_at=now_iso(),
-        prompt_files={str(mode): str(path) for mode, path in prompt_files.items()},
-        prompts_per_mode={
-            str(mode): sum(job["mode"] == mode for job in jobs) for mode in prompt_files
-        },
-        total=len(jobs),
-        done=len(jobs) - len(todo),
-        failed=0,
-        environment=environment_info(),
-    )
+    _record_start(config, generator, prompt_files, jobs, len(todo), seed, batch_size)
     log.info("%d images to generate (%d already done)", len(todo), len(jobs) - len(todo))
 
     if todo:
@@ -163,12 +194,7 @@ def run(
         for start in range(0, len(todo), batch_size):
             batch = todo[start:start + batch_size]
             seeds = [seed + job["global_index"] for job in batch]
-            try:
-                images = generator.generate([job["prompt"] for job in batch], seeds)
-                errors: list[str | None] = [None] * len(batch)
-            except Exception as error:  # one bad batch must not lose the whole run
-                log.exception("Generation failed for %s", [job["name"] for job in batch])
-                images, errors = [None] * len(batch), [f"{type(error).__name__}: {error}"] * len(batch)
+            images, errors = _generate_batch(generator, batch, seeds)
 
             for job, image, job_seed, error in zip(batch, images, seeds, errors):
                 record = {
