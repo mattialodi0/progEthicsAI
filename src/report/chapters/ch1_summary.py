@@ -6,7 +6,49 @@ import html
 import json
 from typing import Any
 
-from ..explain import callout, chapter_header, esc, guide
+from ..explain import badge, callout, chapter_header, esc, guide
+from .ch9_format import BAND_TONE, FLAG_TEXT
+
+_VERDICT = {"large": "Large", "medium": "Moderate", "small": "Small",
+            "negligible": "Negligible", None: "None supported"}
+
+
+def _scorecard(rows: list[dict[str, Any]]) -> str:
+    """Compact table: one row per fairness question, from the chapter-9 synthesis."""
+    body = []
+    for row in rows:
+        tests = row.get("tests") or 0
+        supported = row.get("supported") or 0
+        share = 100 * supported / tests if tests else 0
+        reliable = row.get("reliable") or {}
+        reliable_text = ", ".join(
+            f"{reliable[key]} reliably {word}"
+            for key, word in (("large", "large"), ("medium", "moderate")) if reliable.get(key)
+        )
+        flags = "".join(
+            " " + badge("⚠ " + FLAG_TEXT.get(code, code), "mid")
+            for code in row.get("example_flags") or [] if code
+        )
+        example = (esc(row["example"]) + flags) if row.get("example") else (
+            '<span class="note">No result reaches the support threshold.</span>')
+        body.append(
+            "<tr>"
+            f'<th scope="row"><a href="{esc(row.get("link", "#chapter-9"))}">'
+            f'{esc(row.get("title", ""))}</a>'
+            f'<span class="scorecard-question">{esc(row.get("question", ""))}</span></th>'
+            f'<td>{badge(_VERDICT.get(row.get("band"), "n/a"), BAND_TONE.get(row.get("band"), "neutral"))}</td>'
+            f'<td><div class="ratio"><div class="bar" role="img" aria-label="{supported} of '
+            f'{tests} tests supported"><span style="width:{share:.0f}%"></span></div>'
+            f"<span>{supported} / {tests}</span></div>"
+            + (f'<span class="scorecard-question">{esc(reliable_text)}</span>' if reliable_text else "")
+            + f"</td><td>{example}</td></tr>"
+        )
+    return (
+        '<div class="table-wrap"><table class="scorecard"><thead><tr>'
+        "<th>Fairness question</th><th>Largest reliable disparity</th>"
+        "<th>Supported / tested</th><th>Strongest example</th></tr></thead>"
+        f'<tbody>{"".join(body)}</tbody></table></div>'
+    )
 
 
 def _metric_card(label: str, value: Any, help_text: str = "", href: str = "") -> str:
@@ -25,16 +67,18 @@ def render_chapter_one(
     summary: dict[str, Any],
     indicators: list[tuple[str, str, str, str]] | None = None,
     conclusions: list[str] | None = None,
+    scorecard: list[dict[str, Any]] | None = None,
 ) -> str:
     """Render the executive summary chapter.
 
     ``indicators`` are (label, value, explanation, link) tiles computed from
     the other chapters by ``insights.headline_indicators``; ``conclusions`` are
-    the data-driven points of ``insights.conclusive_insights``.
+    the data-driven points of ``insights.conclusive_insights`` and
+    ``scorecard`` the per-question rows of ``insights.question_scorecard``.
     """
     settings = summary.get("generation_settings") or {}
     settings_html = (
-        f"<details><summary>Generation settings</summary>"
+        f"<details><summary>Show all generation settings</summary>"
         f"<pre>{html.escape(json.dumps(settings, indent=2, ensure_ascii=True))}</pre></details>"
         if settings else
         '<p class="note">No generation settings (seed, steps, guidance scale, resolution) '
@@ -62,15 +106,18 @@ def render_chapter_one(
         if tiles else
         '<p class="placeholder">Headline indicators are not available for this artifact.</p>'
     )
+    scorecard_html = _scorecard(scorecard) if scorecard else ""
     conclusions_html = (
         '<section id="chapter-1-conclusions" aria-labelledby="conclusions-heading">'
         '<h3 id="conclusions-heading">Main conclusions</h3>'
-        + callout("finding", conclusions, "What the audit found")
-        + '<p class="note">Computed from the cross-analysis in <a href="#chapter-9">chapter 9</a>. '
-          "They describe measured differences in this sample, not whether the model is fair "
-          'overall. How the numbers were obtained and how far they can be trusted is '
-          'explained in <a href="#chapter-10">chapter 10</a>.</p></section>'
-        if conclusions else ""
+        + scorecard_html
+        + (callout("finding", conclusions, "What the audit found") if conclusions else "")
+        + '<p class="note">Verdict = effect band of the strongest supported result at the '
+          'lower end of its 95% confidence interval. The full answers are in '
+          '<a href="#chapter-9-answers">chapter 9.1</a>. They describe measured differences '
+          "in this sample, not whether the model is fair overall; how far the numbers can be "
+          'trusted is explained in <a href="#chapter-10">chapter 10</a>.</p></section>'
+        if scorecard or conclusions else ""
     )
     return f"""
   {chapter_header(1, "Executive summary",
@@ -85,12 +132,10 @@ def render_chapter_one(
                   "chapters, and what this kind of audit can and cannot establish.</p>")}
   {conclusions_html}
   <section id="chapter-1-model" aria-labelledby="model-heading">
-    <h3 id="model-heading">Model and audit configuration</h3>
-    <table><tbody>
-      <tr><th scope="row">Model</th><td>{esc(summary.get("model_name", "?"))}</td></tr>
-      <tr><th scope="row">Version</th><td>{esc(summary.get("model_version", "?"))}</td></tr>
-      <tr><th scope="row">Audit date</th><td>{esc(summary.get("audit_date", "?"))}</td></tr>
-    </tbody></table>
+    <h3 id="model-heading">Generation settings</h3>
+    <p class="note">Model <strong>{esc(summary.get("model_name", "?"))}</strong>
+    (version {esc(summary.get("model_version", "?"))}), audited on
+    {esc(summary.get("audit_date", "?"))}.</p>
     {settings_html}
   </section>
   <section id="chapter-1-coverage" aria-labelledby="chapter-1-coverage-heading">

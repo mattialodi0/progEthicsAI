@@ -6,6 +6,7 @@ from typing import Any
 
 from ..explain import chapter_header, findings, guide, metric_defs
 from ..insights import chapter_four
+from ..measurable import unmeasurable_by_attribute
 from .ch4_charts import accuracy_chart, adherence_matrix, demographic_chart, mode_chart
 from .ch4_uncertainty import age_years_card, probability_card
 
@@ -16,12 +17,13 @@ def render_chapter_four(adherence: dict[str, Any]) -> str:
     modes = adherence.get("by_prompt_mode", {})
     combinations = adherence.get("combinations", {})
     attribute_names = adherence.get("attributes", [])
+    unmeasurable = unmeasurable_by_attribute(adherence)
     attribute_html = "".join(
         adherence_matrix(attribute, measurement)
         for attribute, measurement in attributes.items()
     ) or '<p class="note">No adherence observations are available.</p>'
     demographic_html = "".join(
-        demographic_chart(category, groups, attribute_names)
+        demographic_chart(category, groups, attribute_names, unmeasurable.get(category))
         for category, groups in adherence.get("by_demographic_category", {}).items()
         if groups
     ) or '<p class="note">No demographic adherence breakdown is available.</p>'
@@ -69,7 +71,10 @@ def render_chapter_four(adherence: dict[str, Any]) -> str:
         read=["The bar chart summarises adherence per attribute (blue ≥ 80%, amber 60–80%, "
               "red &lt; 60%).",
               "In each confusion matrix, rows are the requested value and columns the "
-              "detected value; each row sums to 100%. Cell text: row percentage and (count)."],
+              "detected value; each row sums to 100%. Cell text: row percentage and (count). "
+              "Outlined cells are the diagonal, i.e. the adherence.",
+              "Rows marked (n/a) request a value the detector cannot output: they can "
+              "never match, so the adherence is also given without them."],
         look=["Rows with a weak diagonal: the requested value is often not drawn.",
               "Asymmetric errors: if “female” is often detected as “male” but never the "
               "reverse, the model drifts towards a default group.",
@@ -85,7 +90,7 @@ def render_chapter_four(adherence: dict[str, Any]) -> str:
                  "(e.g. “hispanic” vs “latino hispanic”)."],
     )}
     <article class="plot-card"><h4>Adherence per attribute</h4>{accuracy_chart(attributes)}</article>
-    {attribute_html}
+    <div class="plot-grid matrix-grid">{attribute_html}</div>
     {age_years_card(adherence.get("age_numeric") or {})}
     {probability_card(adherence.get("probabilities") or {})}
   </section>

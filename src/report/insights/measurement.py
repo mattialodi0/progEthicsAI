@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..measurable import measurable_accuracy, unmeasurable_by_attribute
 from ..explain import esc, label, number, pct
 from .common import MIN_GROUP, category_shares
 
@@ -134,15 +135,29 @@ def chapter_four(adherence: dict[str, Any]) -> list[str]:
         name: number(item.get("accuracy")) for name, item in by_attribute.items()
         if number(item.get("accuracy")) is not None
     }
+    unmeasurable = unmeasurable_by_attribute(adherence)
     if accuracies:
         ordered = sorted(accuracies.items(), key=lambda item: -item[1])
         notes.append("Adherence by attribute, best to worst: " + ", ".join(
             f"{esc(name)} {pct(value)}" for name, value in ordered) + ".")
+    for attribute, values in unmeasurable.items():
+        if not values:
+            continue
+        measurable = measurable_accuracy(
+            (by_attribute.get(attribute) or {}).get("counts") or {}, values)
+        notes.append(
+            f"The {esc(attribute)} detector cannot output "
+            + ", ".join(f"“{esc(value)}”" for value in sorted(values))
+            + ": these requests can never match and are shown as n/a"
+            + (f". On the values it can output, {esc(attribute)} adherence is "
+               f"{pct(measurable)}." if measurable is not None else ".")
+        )
     for category, groups in (adherence.get("by_demographic_category") or {}).items():
         values = {
             group: number((stats.get("accuracy") or {}).get(category))
             for group, stats in groups.items()
             if (stats.get("n_images") or 0) >= MIN_GROUP
+            and group not in unmeasurable.get(category, set())
         }
         values = {group: value for group, value in values.items() if value is not None}
         if len(values) >= 2:
@@ -160,7 +175,7 @@ def chapter_four(adherence: dict[str, Any]) -> list[str]:
     for attribute, item in by_attribute.items():
         for requested, row in (item.get("counts") or {}).items():
             total = sum(number(value) or 0 for value in row.values())
-            if total < MIN_GROUP:
+            if total < MIN_GROUP or requested in unmeasurable.get(attribute, set()):
                 continue
             for detected, count in row.items():
                 if detected != requested and (number(count) or 0) / total >= 0.2:

@@ -6,6 +6,8 @@ import html
 
 from .static_files import static_text
 
+PLOTLY_VERSION = "2.35.2"
+
 
 # (anchor id, label, level) — level 0 is a chapter, 1 a section.
 INDEX = (
@@ -13,7 +15,7 @@ INDEX = (
     ("reading-guide", "How to read this report", -1),
     ("chapter-1", "1. Executive summary", 0),
     ("chapter-1-conclusions", "Main conclusions", 1),
-    ("chapter-1-model", "Model and configuration", 1),
+    ("chapter-1-model", "Generation settings", 1),
     ("chapter-1-coverage", "Audit coverage", 1),
     ("chapter-1-fairness", "Headline indicators", 1),
     ("chapter-1-scope", "Scope and limitations", 1),
@@ -22,7 +24,7 @@ INDEX = (
     ("chapter-2-attributes", "Prompt attributes", 1),
     ("chapter-2-prompts", "Images per prompt", 1),
     ("chapter-2-detections", "Detection rates", 1),
-    ("chapter-3", "3. Representation and diversity", 0),
+    ("chapter-3", "3. Demographic representation and diversity", 0),
     ("chapter-3-distributions", "Demographic distributions", 1),
     ("chapter-3-context", "Composition by job and workplace", 1),
     ("chapter-3-diversity", "Diversity", 1),
@@ -31,7 +33,7 @@ INDEX = (
     ("chapter-4-modes", "Prompt modes", 1),
     ("chapter-4-demographics", "Demographic categories", 1),
     ("chapter-4-combinations", "Attribute combinations", 1),
-    ("chapter-5", "5. Associations", 0),
+    ("chapter-5", "5. Association analysis", 0),
     ("chapter-5-overview", "Association overview", 1),
     ("chapter-5-single-variable", "Single-variable associations", 1),
     ("chapter-5-double-variable", "Double-variable associations", 1),
@@ -68,19 +70,45 @@ INDEX = (
 
 
 def sidebar() -> str:
-    classes = {-1: "", 0: "supitem", 1: "subitem"}
-    return "\n".join(
-        f'      <a class="{classes[level]}" href="#{anchor}" '
-        f'data-section-link="{anchor}">{html.escape(text)}</a>'
-        for anchor, text, level in INDEX
-    )
+    """Index links; each chapter's sections sit in a group that opens while the
+    chapter is in view (see ``report.js``)."""
+
+    def link(anchor: str, text: str, css: str) -> str:
+        return (f'<a class="{css}" href="#{anchor}" data-section-link="{anchor}">'
+                f"{html.escape(text)}</a>")
+
+    parts: list[str] = []
+    group_open = False
+    for anchor, text, level in INDEX:
+        if level == 0:
+            if group_open:
+                parts.append("</div></div>")
+            parts.append(f'<div class="nav-group" data-chapter="{anchor}">'
+                         + link(anchor, text, "supitem") + '<div class="nav-sub">')
+            group_open = True
+        elif level == 1:
+            parts.append(link(anchor, text, "subitem"))
+        else:
+            parts.append(link(anchor, text, ""))
+    if group_open:
+        parts.append("</div></div>")
+    return "\n".join("      " + part for part in parts)
 
 
-def render_page(model: str, subtitle: str, body: str) -> str:
+def plotly_script(inline: bool) -> str:
+    """The Plotly bundle: from the CDN, or embedded so the report works offline."""
+    if not inline:
+        return f'<script src="https://cdn.plot.ly/plotly-{PLOTLY_VERSION}.min.js"></script>'
+    from plotly.offline import get_plotlyjs
+    return f"<script>{get_plotlyjs()}</script>"
+
+
+def render_page(model: str, subtitle: str, body: str, *, inline_plotly: bool = False) -> str:
     """Return the complete report document.
 
     ``model`` and ``subtitle`` must already be escaped; ``body`` holds the
-    reading guide and the rendered chapters.
+    reading guide and the rendered chapters. ``inline_plotly`` embeds the
+    Plotly bundle (about 3.5 MB) instead of loading it from the CDN.
     """
     return f"""<!doctype html>
 <html lang="en">
@@ -88,13 +116,14 @@ def render_page(model: str, subtitle: str, body: str) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Fairness report – {model}</title>
-  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  {plotly_script(inline_plotly)}
   <script>
 {static_text("plotly_defaults.js")}</script>
   <style>
 {static_text("report.css")}</style>
 </head>
 <body>
+<div class="read-progress" aria-hidden="true"><span id="read-progress"></span></div>
 <div class="report-layout">
   <aside class="sidebar" aria-label="Report index">
     <nav>
@@ -115,6 +144,7 @@ def render_page(model: str, subtitle: str, body: str) -> str:
     {body}
   </main>
 </div>
+<a class="to-top" id="to-top" href="#report-title" aria-label="Back to top">↑ Top</a>
 <script>
 {static_text("report.js")}</script>
 </body>

@@ -29,17 +29,23 @@
     ].join("");
 
     // ---- 8.1 / 8.2 TF-IDF cards -----------------------------------------
+    // Words seen fewer than this many times score high on TF-IDF by accident
+    // (one caption is enough), so they are hidden from the cards.
+    const chapterEightMinCount = 3;
     const chapterEightCard = (title, observations, terms) => {
       const columns = Object.entries(chapterEightCategories).map(([key, label]) => {
-        const items = (terms || {})[key] || [];
+        const items = ((terms || {})[key] || [])
+          .filter((item) => Number(item.frequency) >= chapterEightMinCount);
+        const top = Math.max(1, ...items.map((item) => Number(item.frequency)));
         return `<div><h5>${label}</h5>` + (items.length ? `<ol>` + items.map((item) =>
           `<li title="TF-IDF ${Number(item.score).toFixed(4)}, ${item.frequency} occurrences">
            <strong>${chapterEightSafe(item.term)}</strong>
-           <span class="note">${Number(item.score).toFixed(3)} · ${item.frequency}×</span></li>`
-          ).join("") + `</ol>` : `<p class="note">No distinctive words.</p>`) + `</div>`;
+           <span class="term-count"><span class="term-bar" style="width:${(60 * item.frequency / top).toFixed(0)}%"></span>
+           <span class="note">${item.frequency}×</span></span></li>`
+          ).join("") + `</ol>` : `<p class="note">No distinctive word used ${chapterEightMinCount}+ times.</p>`) + `</div>`;
       }).join("");
       return `<article class="plot-card"><h4>${chapterEightSafe(title)}</h4>
-        <p class="note">${observations} observations · TF-IDF score · occurrences</p>
+        <p class="note">${observations} observations · ranked by TF-IDF · bar = occurrences</p>
         <div class="ch8-terms">${columns}</div></article>`;
     };
 

@@ -94,6 +94,7 @@ def render_chapter_two(coverage: dict[str, Any]) -> str:
     detection = coverage.get("valid_detection", {})
     total = max((detection[name]["total"] for name in detection), default=0)
     prompt_counts = coverage.get("prompt_images", {})
+    balanced_html, uneven_html = attribute_sections(coverage.get("attribute_counts", {}), total)
 
     return f"""
   {chapter_header(2, "Dataset and generation coverage",
@@ -114,7 +115,8 @@ def render_chapter_two(coverage: dict[str, Any]) -> str:
     backed by few images give imprecise results later on.</p>
     <article class="plot-card"><h4>Images conditioned by each prompt variable</h4>
       {_conditioning_chart(coverage.get("conditioned_images", {}), total_images)}</article>
-    <div class="plot-grid" style="align-items:start">{attribute_sections(coverage.get("attribute_counts", {}), total)}</div>
+    {balanced_html}
+    <div class="plot-grid" style="align-items:start">{uneven_html}</div>
   </section>
   <section id="chapter-2-prompts"><h3>2.3 Images per prompt</h3>
     <p>{len(prompt_counts)} unique prompts produced {sum(prompt_counts.values())} images.

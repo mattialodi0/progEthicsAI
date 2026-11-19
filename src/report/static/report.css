@@ -146,3 +146,62 @@
     .stat-line b { font-weight: 700; }
     .pyplot-figure { background: #fff; display: block; height: auto; max-width: 100%; width: 100%; }
     .chapter { margin: 20px 0; }
+    /* Sidebar: only the chapter in view shows its sections. */
+    .nav-group .nav-sub { display: none; }
+    .nav-group.open .nav-sub { display: block; }
+    .nav-group.open > .supitem { color: #102a43; }
+    @media (max-width: 800px) { .nav-group { flex: none; } .nav-group .nav-sub,
+      .nav-group.open .nav-sub { display: none; } }
+    .read-progress { background: transparent; height: 3px; left: 0; position: fixed; right: 0;
+      top: 0; z-index: 20; }
+    .read-progress span { background: var(--accent); display: block; height: 100%; width: 0; }
+    .to-top { background: var(--surface); border: 1px solid var(--border); border-radius: 99px;
+      bottom: 1.2rem; box-shadow: 0 2px 6px #102a431a; color: var(--accent); font-size: .85rem;
+      font-weight: 600; opacity: 0; padding: .4rem .8rem; pointer-events: none; position: fixed;
+      right: 1.2rem; text-decoration: none; transition: opacity .2s; z-index: 20; }
+    .to-top.visible { opacity: 1; pointer-events: auto; }
+    main a { color: var(--accent); text-decoration-color: #2f5d8a66; text-underline-offset: 2px; }
+    main a:hover { color: #1d3f61; text-decoration-color: currentColor; }
+    .button { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 6px;
+      color: var(--accent); cursor: pointer; font: inherit; font-size: .88rem; font-weight: 600;
+      padding: .35rem .8rem; }
+    .button:hover { background: #dce8f4; }
+    .subtitle .version { color: var(--muted); font-size: .9em; }
+    /* Six tiles: two rows of three instead of five plus an orphan. */
+    .metrics:has(> :nth-child(6):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    @media (max-width: 700px) { .metrics:has(> :nth-child(6):last-child) {
+      grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    /* Chapter 1 scorecard. */
+    .scorecard th[scope=row] { color: var(--text); font-size: .95rem; min-width: 11rem; }
+    .scorecard th[scope=row] a { font-weight: 700; }
+    .scorecard-question { color: var(--muted); display: block; font-size: .78rem;
+      font-weight: 400; margin-top: .15rem; }
+    .scorecard td { font-size: .9rem; }
+    .scorecard .ratio { align-items: center; display: flex; gap: .5rem; white-space: nowrap; }
+    .scorecard .ratio .bar { flex: 1; min-width: 4rem; }
+    /* Chapter 4: confusion matrices side by side. */
+    .matrix-grid { align-items: start; margin-top: 1rem; }
+    .matrix-grid > .plot-card { margin-top: 0; }
+    /* Chapter 6: adherence dot strip. */
+    .dot-strip { display: block; overflow: visible; }
+    .dot-strip line { stroke: var(--border); stroke-width: 2; }
+    .dot-strip circle { fill: var(--accent); fill-opacity: .7; stroke: #fff; stroke-width: 1; }
+    .dot-scale { color: var(--muted); display: flex; font-size: .7rem; justify-content: space-between;
+      width: 180px; }
+    details.inline-details { background: none; border: 0; box-shadow: none; font-size: .85rem;
+      margin-top: .2rem; padding: 0; }
+    details.inline-details summary { color: var(--muted); font-weight: 600; }
+    .balanced-list { margin-top: 1rem; }
+    @media print {
+      @page { margin: 14mm; }
+      body { background: #fff; font-size: 11pt; }
+      .sidebar, .read-progress, .to-top, .suggestion-toggle, .ch9-filters,
+      #ch9-download, .modebar-container { display: none !important; }
+      .report-layout { display: block; max-width: none; padding: 0; }
+      .metric, section, details, .plot-card, .callout-finding { box-shadow: none; }
+      .chapter { break-before: page; }
+      .plot-card, .metric, .callout, tr, .finding-card { break-inside: avoid; }
+      h2, h3, h4 { break-after: avoid; }
+      main a { color: inherit; text-decoration: none; }
+      .ch9-filters { position: static; }
+    }

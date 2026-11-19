@@ -111,8 +111,9 @@ def confidence_section(confidence: dict[str, Any]) -> str:
     )
 
 
-def attribute_sections(attribute_counts: dict[str, dict[str, int]], total: float) -> str:
-    """One card per prompt variable with the image count of each value."""
+def attribute_sections(attribute_counts: dict[str, dict[str, int]],
+                       total: float) -> tuple[str, str]:
+    """Return (summary line of evenly tested variables, one card per uneven variable)."""
 
     def section(attribute: str, values: dict[str, int]) -> str:
         top = max((numeric(count) for count in values.values()), default=0)
@@ -131,6 +132,25 @@ def attribute_sections(attribute_counts: dict[str, dict[str, int]], total: float
             f"</thead><tbody>{rows}</tbody></table></article>"
         )
 
-    return "".join(
-        section(label(attribute), values) for attribute, values in attribute_counts.items()
-    )
+    # Variables whose values all have the same count need no table: one line
+    # says it. Only unevenly tested variables get a card.
+    balanced, uneven = [], []
+    for attribute, values in attribute_counts.items():
+        counts = {numeric(count) for count in values.values()}
+        (balanced if len(values) > 1 and len(counts) == 1 else uneven).append(attribute)
+    cards = "".join(section(label(attribute), attribute_counts[attribute])
+                    for attribute in uneven)
+    summary = ""
+    if balanced:
+        summary = (
+            '<p class="note balanced-list"><strong>Evenly tested</strong> (every value has the '
+            "same number of images): " + "; ".join(
+                f"{html.escape(label(attribute).lower())} "
+                f"({len(attribute_counts[attribute])} values × "
+                f"{int(numeric(next(iter(attribute_counts[attribute].values()))))} images: "
+                + ", ".join(html.escape(str(value)) for value in attribute_counts[attribute])
+                + ")"
+                for attribute in balanced
+            ) + ".</p>"
+        )
+    return summary, cards

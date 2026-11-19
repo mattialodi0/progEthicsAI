@@ -19,7 +19,9 @@ def chart(
         title=title,
         height=height,
         margin={"l": 55, "r": 25, "t": 65 if title else 25, "b": 55},
-        template="plotly_white",
+        # No Python template: it would embed ~8 KB of styling JSON in every
+        # chart. The white style is applied once in static/plotly_defaults.js.
+        template="none",
         legend={"orientation": "h", "y": -0.2},
     )
     return to_html(

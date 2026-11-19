@@ -28,7 +28,7 @@ from .chapters import (
     render_reading_guide,
     render_stereotypical_associations,
 )
-from .insights import conclusive_insights, headline_indicators
+from .insights import conclusive_insights, headline_indicators, question_scorecard
 from .page import render_page
 
 SCHEMA_VERSION = 2
@@ -72,7 +72,7 @@ def _render_chapters(report_data: dict[str, Any], config: dict[str, Any]) -> str
     bias_stats = report_data["chapter_5"]
     chapters = [
         render_chapter_one(report_data["chapter_1"], headline_indicators(report_data),
-                           conclusive_insights(report_data)),
+                           conclusive_insights(report_data), question_scorecard(report_data)),
         render_chapter_two(report_data["chapter_2"]),
         render_chapter_three(report_data["chapter_3"]),
         render_chapter_four(report_data["chapter_4"]),
@@ -103,8 +103,11 @@ def _report_path(config: dict[str, Any], output_dir: str | Path | None) -> Path:
 
 
 def _subtitle(summary: dict[str, Any], model: str) -> str:
+    version = summary.get("model_version")
+    version_html = (f" <span class=\"version\">({html.escape(str(version))})</span>"
+                    if version and str(version) != str(summary.get("model_name")) else "")
     return (
-        f"Text-to-image fairness audit of <strong>{model}</strong> · "
+        f"Text-to-image fairness audit of <strong>{model}</strong>{version_html} · "
         f"{html.escape(str(summary.get('generated_images', '?')))} images from "
         f"{html.escape(str(summary.get('num_prompts', '?')))} prompts · "
         f"audit date {html.escape(str(summary.get('audit_date', '?')))}"
@@ -117,6 +120,7 @@ def build_report(
     open_report: bool = True,
     wait_for_close: bool = True,
     output_dir: str | Path | None = None,
+    inline_plotly: bool = False,
 ) -> Path:
     """Render a previously saved analysis artifact.
 
@@ -126,6 +130,7 @@ def build_report(
 
     ``open_report`` and ``wait_for_close`` are explicit so notebooks and tests
     can render without blocking, while normal analysis runs remain interactive.
+    ``inline_plotly`` embeds the Plotly library so the report also works offline.
     """
     config, report_data = _validate(_load_artifact(analysis_artifact))
 
@@ -139,8 +144,10 @@ def build_report(
     report_path = _report_path(config, output_dir)
     summary = report_data["chapter_1"]
     model = html.escape(str(summary.get("model_name", "Unknown model")))
-    report_path.write_text(render_page(model, _subtitle(summary, model), body),
-                           encoding="utf-8")
+    report_path.write_text(
+        render_page(model, _subtitle(summary, model), body, inline_plotly=inline_plotly),
+        encoding="utf-8",
+    )
 
     if open_report:
         webbrowser.open(report_path.resolve().as_uri())
@@ -171,12 +178,18 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Do not wait for input after opening the report",
     )
+    parser.add_argument(
+        "--inline-plotly",
+        action="store_true",
+        help="Embed the Plotly library (about 3.5 MB) so the report works offline",
+    )
     args = parser.parse_args(argv)
     build_report(
         args.input,
         output_dir=args.output_dir,
         open_report=not args.no_open,
         wait_for_close=not args.no_wait,
+        inline_plotly=args.inline_plotly,
     )
 
 

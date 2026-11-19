@@ -166,8 +166,9 @@ def _interactive_sections(data: dict[str, Any], rows: dict[str, dict[str, Any]])
     {explorer_controls(data)}
     {guide(
         read="Each row is one result; colour = lens; filled marker = supported, open = not "
-             "supported. Dotted lines mark the small, medium and large thresholds. Hover for "
-             "the full statement, effect, n and q.",
+             "supported; a triangle ▶ means the strength reached the scale's cap, so the "
+             "true value may be higher. Dotted lines mark the small, medium and large "
+             "thresholds. Hover for the full statement, effect, n and q.",
         look="Long bars reaching down towards 0: a large point estimate with little "
              "certainty. Narrow bars far to the right are the most reliable large effects.",
         caution="Strength puts different metrics on one scale using conventions, not a "
@@ -194,7 +195,8 @@ def _interactive_sections(data: dict[str, Any], rows: dict[str, dict[str, Any]])
   <section id="chapter-9-explorer">
     <h3>9.7 Results explorer</h3>
     <p>The full results table (filtered as above). Click a column to sort; the default order is
-    the ranking used in 9.2. <button type="button" id="ch9-download">Download filtered results
+    the ranking used in 9.2.</p>
+    <p><button type="button" class="button" id="ch9-download">Download filtered results
     (CSV)</button></p>
     <details class="defs" id="ch9-explorer-details">
       <summary>Show the results table (<span id="ch9-count" aria-live="polite"></span>)</summary>

@@ -57,7 +57,7 @@ def render_chapter_seven(chapter_data: dict[str, Any]) -> str:
     """Render interactive feature and embedding plots."""
     serialized = script_json(_compact(chapter_data))
     return f"""
-  {chapter_header(7, "Visual feature and embedding analysis",
+  {chapter_header(7, "Visual features and embeddings",
       "Are some groups depicted differently — lighter or darker, closer or farther, more "
       "or less distinct — independently of what the prompt asked for?",
       "<p>Chapters 3–6 work with categorical labels. This chapter looks at continuous image "

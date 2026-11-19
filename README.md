@@ -31,7 +31,6 @@ runtime (ready-made notebooks are in `notebooks/`) and copy the run folder local
 
 ```
 assets/               generated prompt files (git-ignored, regenerate with step 1)
-notebooks/            Colab notebooks: imge_generation, feature_extraction, feature_analysis
 src/
   run_config.py       shared config.json handling (atomic, resumable, preserves manual keys)
   generation/         prompt_generator.py, generate_images.py, models/ (one adapter per model)
@@ -171,6 +170,18 @@ artifact_path = save_analysis(data, config, "assets/analysis.json")             
 artifact_path = save_analysis(data, config, "assets/analysis.json", chapters=[5, 6])  # partial update
 report_path = build_report(artifact_path, open_report=True, wait_for_close=True)
 ```
+
+### Customization
+
+The pipeline primary customization option is to use a different T2I model to get the images. 
+To do so add the code to invoke the desired model inside `src/generation/models/` and call it from the command line.
+Follow the example provided by the three models analyszed here.
+
+It is also possible to change some parts of the prompt generation.
+To keep 100% functionality of the analysis and reporting, one should only change the number of images per prompt or the values of the attributes.   
+It is also possible to completely omit some attributes from the prompts, but the report will not be complete. 
+Adding attributes is not currently supported.
+
 
 ## What is measured
 

@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 
 from ..explain import chapter_header, esc, findings, guide, label, metric_defs
 from ..insights import chapter_six
+from ..measurable import unmeasurable_from_transitions
 from ..plotly_helpers import chart, numeric
 from .ch6_transitions import transition_selector
 
@@ -99,15 +100,52 @@ def _embedding_plots(data: dict[str, Any]) -> str:
     )
 
 
+def _adherence_strip(adherence: dict[str, Any], unmeasurable: set[str]) -> str:
+    """One dot per requested value on a 0-100% scale, plus the extremes in text.
+
+    Values the detector never reports are listed as n/a instead of plotted at 0%.
+    """
+    rates = {value: 100 * numeric(stats.get("rate")) for value, stats in adherence.items()
+             if value not in unmeasurable}
+    if not rates and not unmeasurable:
+        return "-"
+    width, pad = 180, 6
+    dots = "".join(
+        f'<circle cx="{pad + (width - 2 * pad) * rate / 100:.1f}" cy="9" r="4.5">'
+        f"<title>{esc(value)}: {rate:.0f}% (n={adherence[value].get('n', 0)})</title></circle>"
+        for value, rate in sorted(rates.items(), key=lambda item: item[1])
+    )
+    strip = (
+        f'<svg class="dot-strip" viewBox="0 0 {width} 18" width="{width}" height="18" '
+        f'role="img" aria-label="Adherence per requested value">'
+        f'<line x1="{pad}" x2="{width - pad}" y1="9" y2="9"></line>{dots}</svg>'
+        f'<div class="dot-scale"><span>0%</span><span>100%</span></div>'
+    )
+    parts = []
+    if rates:
+        low = min(rates, key=rates.get)
+        high = max(rates, key=rates.get)
+        parts.append(f"lowest {esc(low)} {rates[low]:.0f}% · highest {esc(high)} "
+                     f"{rates[high]:.0f}%" if low != high else f"{esc(low)} {rates[low]:.0f}%")
+    if unmeasurable:
+        parts.append("n/a: " + ", ".join(esc(value) for value in sorted(unmeasurable)))
+    listing = "<br>".join(
+        f"{esc(value)}: " + ("n/a" if value in unmeasurable else f"{rates[value]:.0f}%")
+        for value in adherence
+    )
+    return (
+        (strip if rates else "")
+        + f'<div class="note">{"<br>".join(parts)}</div>'
+        + f"<details class=\"inline-details\"><summary>All values</summary>{listing}</details>"
+    )
+
+
 def _metrics_table(data: dict[str, Any]) -> str:
     rows = []
     for attribute in data.get("attributes", []):
         item = data.get("by_attribute", {}).get(attribute, {})
         adherence = item.get("adherence", {})
-        adherence_text = "<br>".join(
-            f"{esc(condition)}: {100 * numeric(stats.get('rate')):.0f}%"
-            for condition, stats in adherence.items()
-        ) or "-"
+        adherence_text = _adherence_strip(adherence, unmeasurable_from_transitions(item))
         embeddings = item.get("embeddings", {})
         cosine = embeddings.get("paired_cosine_distance", {}).get("mean")
         within = embeddings.get("within_condition_euclidean_distance", {}).get("mean")
@@ -170,16 +208,18 @@ def render_chapter_six(data: dict[str, Any]) -> str:
   <section id="chapter-6-overview">
     <h3>Overview</h3>
     {guide(
-        read="One row per attribute that is changed between the two prompts of a pair.",
+        read=["One row per attribute that is changed between the two prompts of a pair.",
+              "Adherence column: one dot per requested value on a 0–100% scale (hover a "
+              "dot for its value); expand “All values” for the full list."],
         look=["Large adherence gaps between the values of one attribute: the model follows "
               "the change in one direction more reliably than in the other.",
               "Demographic attributes (gender, race, age) with a cosine distance close to "
               "that of job or workplace: changing the person changes the whole scene, "
               "not just the person."],
         caution=[esc(data.get("caveat", "")),
-                 "An adherence of 0% for one value usually means that the requested label "
-                 "never matches the detector's label set (e.g. “hispanic” vs “latino "
-                 "hispanic”, or job names that the captions do not contain)."],
+                 "Values marked n/a were never detected in any pair: the detector's "
+                 "label set (or the captions, for jobs and workplaces) has no such "
+                 "label, so their adherence is not measurable rather than 0%."],
     )}
     {_metrics_table(data)}
   </section>

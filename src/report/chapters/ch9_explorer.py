@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ...analysis.synthesis.constants import MAX_STRENGTH
 from ..explain import esc
 from ..static_files import script_json
 
@@ -38,6 +39,7 @@ def results_payload(data: dict[str, Any]) -> str:
         "tiers": settings.get("tiers") or {},
         "small_n": settings.get("small_n", 30),
         "alpha": settings.get("alpha", 0.05),
+        "max_strength": MAX_STRENGTH,
     }
     return script_json(payload)
 

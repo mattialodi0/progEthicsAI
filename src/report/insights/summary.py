@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..measurable import measurable_accuracy, unmeasurable_from_counts
 from ..explain import esc, label, number, pct
 from .common import MIN_GROUP, category_shares, strongest_associations
 
@@ -38,16 +39,24 @@ def headline_indicators(report_data: dict[str, Any]) -> list[tuple[str, str, str
             "#chapter-3-distributions",
         ))
     adherence = report_data.get("chapter_4", {}).get("by_attribute", {})
-    accuracies = {
-        name: number(item.get("accuracy")) for name, item in adherence.items()
-        if number(item.get("accuracy")) is not None and item.get("total", 0) >= MIN_GROUP
-    }
+    # Requests the detector cannot output would score 0% by construction, so the
+    # tile uses the adherence on the values it can report.
+    accuracies = {}
+    for name, item in adherence.items():
+        if number(item.get("accuracy")) is None or item.get("total", 0) < MIN_GROUP:
+            continue
+        counts = item.get("counts") or {}
+        excluded = unmeasurable_from_counts(counts)
+        accuracies[name] = (measurable_accuracy(counts, excluded) if excluded
+                            else number(item.get("accuracy")))
+    accuracies = {name: value for name, value in accuracies.items() if value is not None}
     if accuracies:
         worst = min(accuracies, key=accuracies.get)
         best = max(accuracies, key=accuracies.get)
         tiles.append((
             "Prompt adherence", f"{pct(accuracies[best], 0)} → {pct(accuracies[worst], 0)}",
-            f"Best ({esc(best)}) to worst ({esc(worst)}) attribute.",
+            f"Best ({esc(best)}) to worst ({esc(worst)}) attribute, on values the detector "
+            "can output.",
             "#chapter-4-attributes",
         ))
     strongest = strongest_associations(report_data.get("chapter_5", {}), limit=1)
@@ -73,23 +82,19 @@ def headline_indicators(report_data: dict[str, Any]) -> list[tuple[str, str, str
     return tiles
 
 
-_BAND_WORDS = {"negligible": "negligible", "small": "small", "medium": "moderate",
-               "large": "large"}
-
-
 def conclusive_insights(report_data: dict[str, Any]) -> list[str]:
-    """Return short HTML conclusions for the executive summary.
+    """Return short HTML conclusions shown under the executive-summary scorecard.
 
     Everything is drawn from the chapter-9 synthesis: how many results survive
-    the audit-wide correction, which fairness questions show a disparity, the
-    most robust finding, and how much the measurements can be trusted. The
-    wording states what was measured and never calls a model fair or unfair.
+    the audit-wide correction, the most robust finding, and how much the
+    measurements can be trusted. The per-question verdicts are in the scorecard
+    (``question_scorecard``). The wording states what was measured and never
+    calls a model fair or unfair.
     """
     synthesis = report_data.get("chapter_9") or {}
     summary = synthesis.get("summary") or {}
     if not summary.get("tests"):
         return []
-    rows = {row.get("id"): row for row in synthesis.get("results") or []}
     clusters = {item.get("id"): item for item in synthesis.get("clusters") or []}
     answers = synthesis.get("answers") or []
     settings = synthesis.get("settings") or {}
@@ -100,12 +105,11 @@ def conclusive_insights(report_data: dict[str, Any]) -> list[str]:
     items: list[str] = []
 
     found = [a for a in answers if a.get("band") and a.get("supported")]
-    clear = [a for a in answers if not a.get("supported")]
     if found:
-        names = ", ".join(f"<strong>{esc(a['title'].lower())}</strong>" for a in found)
         items.append(
-            f"Disparities were found in {len(found)} of {len(answers)} fairness questions: "
-            f"{names}. Out of {summary.get('tests', 0):,} tests, {summary.get('supported', 0):,} "
+            f"Disparities were found in <strong>{len(found)} of {len(answers)}</strong> fairness "
+            f"questions (table above). Out of {summary.get('tests', 0):,} tests, "
+            f"{summary.get('supported', 0):,} "
             f"remain after correcting for multiple testing (q &lt; {alpha}) with at least a "
             "small effect, and they merge into "
             f"{summary.get('findings', 0):,} distinct findings."
@@ -115,27 +119,6 @@ def conclusive_insights(report_data: dict[str, Any]) -> list[str]:
             f"None of the {summary.get('tests', 0):,} tests supports a disparity after "
             "correcting for multiple testing. That is not proof of fairness: it means this "
             "sample could not tell the groups apart from noise."
-        )
-
-    # One line per question with a supported disparity, largest effect first.
-    order = {"large": 0, "medium": 1, "small": 2, "negligible": 3}
-    for answer in sorted(found, key=lambda a: order.get(a["band"], 4)):
-        top = rows.get((answer.get("top") or [None])[0])
-        if not top:
-            continue
-        reliable = answer.get("reliable") or {}
-        items.append(
-            f"<strong>{esc(answer['title'])}</strong> "
-            f"(largest reliable disparity: {esc(_BAND_WORDS.get(answer['band'], answer['band']))}; "
-            f"{answer['supported']} of {answer['tests']} tests supported, "
-            f"{reliable.get('large', 0)} reliably large): "
-            f"{esc(top['statement'].rstrip('.'))}. "
-            f'<a href="{esc(answer.get("link", "#chapter-9"))}">Details &rarr;</a>'
-        )
-    if clear:
-        items.append(
-            "No supported disparity for " + ", ".join(esc(a["title"].lower()) for a in clear)
-            + "."
         )
 
     key = [clusters[item] for item in synthesis.get("key_findings") or [] if item in clusters]
@@ -154,14 +137,6 @@ def conclusive_insights(report_data: dict[str, Any]) -> list[str]:
             f"the other {evidence.get('supported', 0):,} rest on a single measurement and "
             "should be read as leads."
         )
-    stereotypes = summary.get("stereotype_candidates", 0)
-    if stereotypes:
-        items.append(
-            f"{stereotypes:,} supported results link a social group (gender, race, age, "
-            "origin, status or trait) to content nobody asked for. They are candidates for "
-            "human review as possible stereotypes, not verdicts."
-        )
-
     measurement = synthesis.get("measurement") or {}
     affected = measurement.get("affected_supported") or {}
     caveats = []
@@ -178,3 +153,24 @@ def conclusive_insights(report_data: dict[str, Any]) -> list[str]:
                      + ". All demographic labels are detector predictions "
                      "(see chapter 10).")
     return items
+
+
+def question_scorecard(report_data: dict[str, Any]) -> list[dict[str, Any]]:
+    """One row per fairness question of the chapter-9 synthesis, for chapter 1."""
+    synthesis = report_data.get("chapter_9") or {}
+    rows = {row.get("id"): row for row in synthesis.get("results") or []}
+    card = []
+    for answer in synthesis.get("answers") or []:
+        top = rows.get((answer.get("top") or [None])[0])
+        card.append({
+            "title": answer.get("title", ""),
+            "question": answer.get("question", ""),
+            "band": answer.get("band") if answer.get("supported") else None,
+            "supported": answer.get("supported", 0),
+            "tests": answer.get("tests", 0),
+            "reliable": answer.get("reliable") or {},
+            "example": top.get("statement", "") if top else "",
+            "example_flags": [flag.get("code") for flag in (top or {}).get("flags") or []],
+            "link": answer.get("link", "#chapter-9"),
+        })
+    return card

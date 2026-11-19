@@ -4,6 +4,7 @@
   const lenses = payload.lenses;
   const smallN = payload.small_n;
   const alpha = payload.alpha;
+  const maxStrength = payload.max_strength || 6;
   const lensColor = {};
   const palette = ["#0072B2", "#E69F00", "#009E73", "#D55E00", "#CC79A7", "#56B4E9",
                    "#8C6D31", "#7F7F7F", "#332288", "#B8336A", "#44AA99"];
@@ -71,6 +72,22 @@
         : (row.statement + " " + row.id).toLowerCase().includes(search))));
   };
   const short = (text, size) => text.length > size ? text.slice(0, size - 1) + "…" : text;
+  // Break a statement into at most ``lines`` lines of about ``size`` characters
+  // so that similar results ("Same prompt, only job changed …") stay distinguishable.
+  const wrap = (text, size, lines) => {
+    const words = String(text).split(" ");
+    const out = [""];
+    words.forEach((word) => {
+      const current = out[out.length - 1];
+      if (current && (current + " " + word).length > size) out.push(word);
+      else out[out.length - 1] = current ? current + " " + word : word;
+    });
+    if (out.length > lines) {
+      out.length = lines;
+      out[lines - 1] = short(out[lines - 1], size - 1) + "…";
+    }
+    return out.map(escapeHtml).join("<br>");
+  };
   // Plotly keeps its state on the div: wiping innerHTML of a plotted div breaks
   // later Plotly.react calls, so purge before showing a note, and remove only the
   // note before plotting again.
@@ -85,33 +102,41 @@
     const target = el("ch9-forest");
     if (!ranked.length) { showEmpty(target); return; }
     clearNote(target);
+    const capped = (row) => row.strength >= maxStrength - 1e-9;
     const traces = Object.keys(lenses).map((lens) => {
       const items = ranked.filter((row) => row.lens === lens);
       return {
         type: "scatter", mode: "markers", name: lenses[lens].label,
         x: items.map((row) => row.strength),
         y: items.map((row) => row.id),
+        // Strength is capped at maxStrength: capped results get an arrow marker.
         marker: {color: lensColor[lens], size: 10,
-                 symbol: items.map((row) => row.tier === "supported" ? "circle" : "circle-open")},
+                 symbol: items.map((row) => (capped(row) ? "triangle-right" : "circle") +
+                   (row.tier === "supported" ? "" : "-open"))},
         error_x: {type: "data", symmetric: false, color: lensColor[lens], thickness: 1.5,
                   array: items.map((row) => Math.max(0, (row.strength_ci?.[1] ?? row.strength) - row.strength)),
                   arrayminus: items.map((row) => Math.max(0, row.strength - (row.strength_ci?.[0] ?? row.strength)))},
         customdata: items.map((row) => [escapeHtml(row.statement), fmtEffect(row), row.n, fmtQ(row.q_value),
-                                        tierLabel[row.tier] || row.tier]),
+                                        tierLabel[row.tier] || row.tier,
+                                        capped(row) ? "≥ " + maxStrength + " (capped)" : row.strength.toFixed(2)]),
         hovertemplate: "%{customdata[0]}<br>Effect %{customdata[1]} · n = %{customdata[2]} · q %{customdata[3]}" +
-                       "<br>Strength %{x:.2f} · %{customdata[4]}<extra></extra>"
+                       "<br>Strength %{customdata[5]} · %{customdata[4]}<extra></extra>"
       };
     }).filter((trace) => trace.x.length);
-    const labels = Object.fromEntries(ranked.map((row) => [row.id, short(row.statement, 70)]));
+    const lows = ranked.map((row) => row.strength_ci?.[0] ?? row.strength);
+    const xMin = Math.max(0, Math.floor(Math.min(...lows) * 2) / 2 - 0.25);
+    const thresholds = [1, 2, 3].filter((x) => x > xMin);
     Plotly.react(target, traces, {
-      height: Math.max(420, 26 * ranked.length + 120),
-      margin: {l: 430, r: 20, t: 20, b: 50},
-      xaxis: {title: "Strength (1 = small, 2 = medium, 3 = large); bars = 95% CI", range: [0, 6.3], zeroline: false},
+      height: Math.max(460, 38 * ranked.length + 130),
+      margin: {l: 400, r: 20, t: 20, b: 50},
+      xaxis: {title: "Strength (1 = small, 2 = medium, 3 = large); bars = 95% CI; ▶ = capped at " + maxStrength,
+              range: [xMin, maxStrength + 0.3], zeroline: false},
       yaxis: {type: "category", categoryorder: "array", categoryarray: ranked.map((row) => row.id),
               tickmode: "array", tickvals: ranked.map((row) => row.id),
-              ticktext: ranked.map((row) => labels[row.id]), automargin: false, tickfont: {size: 11}},
-      shapes: [1, 2, 3].map((x) => ({type: "line", x0: x, x1: x, yref: "paper", y0: 0, y1: 1,
-                                     line: {dash: "dot", color: "#9aa5b1", width: 1}})),
+              ticktext: ranked.map((row) => wrap(row.statement, 62, 2)), automargin: false,
+              tickfont: {size: 10.5}},
+      shapes: thresholds.map((x) => ({type: "line", x0: x, x1: x, yref: "paper", y0: 0, y1: 1,
+                                      line: {dash: "dot", color: "#9aa5b1", width: 1}})),
       legend: {orientation: "h", y: -0.12}
     });
   };
@@ -120,25 +145,38 @@
     const usable = data.filter((row) => row.strength !== null && row.strength !== undefined && row.n);
     if (!usable.length) { showEmpty(target); return; }
     clearNote(target);
-    const tiers = Array.from(new Set(usable.map((row) => row.tier)));
+    // Draw supported results last so they sit on top of the grey ones.
+    const order = ["negligible", "context", "measurement", "descriptive", "supported"];
+    const tiers = Array.from(new Set(usable.map((row) => row.tier)))
+      .sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    // Deterministic jitter: many results share the same n (e.g. 10 images), so
+    // spread them horizontally a little to make the density visible.
+    const jitter = (row, index) => {
+      let hash = 0;
+      const key = String(row.id || index);
+      for (let i = 0; i < key.length; i += 1) hash = (hash * 31 + key.charCodeAt(i)) | 0;
+      return Math.exp(((Math.abs(hash) % 1000) / 1000 - 0.5) * 0.18);
+    };
     const traces = tiers.map((tier) => {
       const items = usable.filter((row) => row.tier === tier);
       return {
         type: "scattergl", mode: "markers", name: tierLabel[tier] || tier,
-        x: items.map((row) => row.n), y: items.map((row) => row.strength),
-        marker: {color: tierColor[tier] || "#7f7f7f", size: 7, opacity: 0.65},
+        x: items.map((row, index) => row.n * jitter(row, index)), y: items.map((row) => row.strength),
+        marker: {color: tierColor[tier] || "#7f7f7f", size: 6,
+                 opacity: tier === "supported" ? 0.55 : 0.35},
         customdata: items.map((row) => [escapeHtml(short(row.statement, 140)), fmtEffect(row),
-                                        fmtQ(row.q_value), lenses[row.lens].label]),
+                                        fmtQ(row.q_value), lenses[row.lens].label, row.n]),
         hovertemplate: "%{customdata[0]}<br>%{customdata[3]} · effect %{customdata[1]} · q %{customdata[2]}" +
-                       "<br>n = %{x} · strength %{y:.2f}<extra></extra>"
+                       "<br>n = %{customdata[4]} · strength %{y:.2f}<extra></extra>"
       };
     });
     Plotly.react(target, traces, {
       height: 460, margin: {l: 60, r: 20, t: 30, b: 60},
-      xaxis: {title: "n of the smallest compared group (log scale)", type: "log"},
-      yaxis: {title: "Strength", range: [0, 6.3]},
+      xaxis: {title: "n of the smallest compared group (log scale, slightly jittered)", type: "log",
+              dtick: 1},
+      yaxis: {title: "Strength", range: [0, maxStrength + 0.3]},
       shapes: [
-        {type: "rect", xref: "x", yref: "y", x0: 1, x1: smallN, y0: 3, y1: 6.3,
+        {type: "rect", xref: "x", yref: "y", x0: 1, x1: smallN, y0: 3, y1: maxStrength + 0.3,
          fillcolor: "#c0392b", opacity: 0.07, line: {width: 0}},
         ...[1, 2, 3].map((y) => ({type: "line", xref: "paper", x0: 0, x1: 1, y0: y, y1: y,
                                   line: {dash: "dot", color: "#9aa5b1", width: 1}}))

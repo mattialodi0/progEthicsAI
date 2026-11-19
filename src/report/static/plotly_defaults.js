@@ -21,11 +21,41 @@
     };
     const config = (value) => Object.assign({responsive: true, displaylogo: false,
       modeBarButtonsToRemove: ["lasso2d", "select2d"]}, value || {});
+    // Lazy rendering: a chart is drawn only when its container comes near the
+    // viewport (or a closed <details> holding it is opened). The report has
+    // dozens of charts; drawing them all on load makes the page slow to open.
+    // A later call for a chart that is still waiting replaces its arguments.
+    const pending = new Map();
+    const draw = (element) => {
+      const job = pending.get(element);
+      if (!job) return;
+      pending.delete(element);
+      lazy?.unobserve(element);
+      job.original.apply(Plotly, [element].concat(job.args));
+    };
+    const lazy = "IntersectionObserver" in window ? new IntersectionObserver((entries) => {
+      entries.forEach((entry) => { if (entry.isIntersecting) draw(entry.target); });
+    }, {rootMargin: "800px 0px"}) : null;
+    window.reportFlushCharts = () => Array.from(pending.keys()).forEach(draw);
     ["newPlot", "react"].forEach((name) => {
       const original = Plotly[name];
-      Plotly[name] = (element, data, layout, options) =>
-        Array.isArray(data)
-          ? original.call(Plotly, element, data, withDefaults(layout), config(options))
-          : original.call(Plotly, element, data, layout, options);
+      Plotly[name] = (element, data, layout, options) => {
+        if (!Array.isArray(data)) return original.call(Plotly, element, data, layout, options);
+        const args = [data, withDefaults(layout), config(options)];
+        const target = typeof element === "string" ? document.getElementById(element) : element;
+        // Already drawn (filter changes) or no observer: draw immediately.
+        if (!lazy || !target || target._fullLayout) {
+          return original.apply(Plotly, [element].concat(args));
+        }
+        if (!pending.has(target)) lazy.observe(target);
+        pending.set(target, {original, args});
+        return Promise.resolve(target);
+      };
     });
+    const purge = Plotly.purge;
+    Plotly.purge = (element) => {
+      const target = typeof element === "string" ? document.getElementById(element) : element;
+      if (target && pending.has(target)) { pending.delete(target); lazy?.unobserve(target); }
+      return purge.call(Plotly, element);
+    };
   })();

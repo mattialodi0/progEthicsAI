@@ -319,7 +319,7 @@ def render_chapter_ten(report_data: dict[str, Any], config: dict[str, Any] | Non
     config = config or {}
     return f"""
   {_STYLE}
-  {chapter_header(10, "Methodology, limitations and explanations",
+  {chapter_header(10, "Methodology and limitations",
       "How were these numbers produced, and how far can they be trusted?",
       "<p>This chapter documents the audit so that a reader can judge it: the pipeline, the "
       "models that turn images into measurements, the statistics behind every chapter, how "

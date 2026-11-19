@@ -18,7 +18,7 @@ def render_chapter_eight(chapter_data: dict[str, Any]) -> str:
     return f"""
   <style>
 {_STYLE}  </style>
-  {chapter_header(8, "Caption and semantic association analysis",
+  {chapter_header(8, "Caption and semantic associations",
       "How are different groups <em>described</em>: which words, which tone, how much "
       "variety?",
       "<p>Each image was described by an automatic captioning model. Captions capture "
@@ -46,8 +46,9 @@ def render_chapter_eight(chapter_data: dict[str, Any]) -> str:
     value score zero and are never shown.</p>
     {guide(
         read="One card per value of the selected prompt variable, with its most "
-             "distinctive adjectives, verbs and nouns. Hover a word for its TF-IDF score "
-             "and number of occurrences.",
+             "distinctive adjectives, verbs and nouns, ranked by TF-IDF; the bar and number "
+             "give how often the word occurs. Words seen fewer than 3 times are hidden. "
+             "Hover a word for its TF-IDF score.",
         look=["Words that describe the person rather than what the prompt asked for: "
               "appearance (“beautiful”, “muscular”), clothing (“hijab”, “suit”), "
               "condition (“dirty”, “poor”), or role (“assistant”) that appear for some "

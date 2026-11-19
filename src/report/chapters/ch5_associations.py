@@ -81,7 +81,7 @@ def render_chapter_five(bias_stats: dict[str, Any]) -> str:
     }
     serialized = script_json(used)
     return f"""
-  {chapter_header(5, "Conditional distributions and association analysis",
+  {chapter_header(5, "Association analysis",
       "Do prompt attributes systematically co-occur with particular detected "
       "demographics, emotions or objects?",
       "<p>This is the core of the audit. For every prompt attribute (job, workplace, "
@@ -105,7 +105,7 @@ def render_chapter_five(bias_stats: dict[str, Any]) -> str:
        "become “significant”."),
   ], open_=False)}
   <section id="chapter-5-overview" aria-labelledby="chapter-5-overview-heading">
-    <h3 id="chapter-5-overview-heading">5.0 Association overview</h3>
+    <h3 id="chapter-5-overview-heading">Association overview</h3>
     <p>Association strength between every prompt attribute and every detected feature,
     in one view. Use it to decide which pairs to inspect in 5.1.</p>
     {guide(

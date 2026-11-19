@@ -10,10 +10,10 @@ are deliberately conservative to avoid highlighting noise from tiny groups.
 from .associations import chapter_five, intersectional, stereotypes
 from .effects import chapter_eight, chapter_seven, chapter_six
 from .measurement import chapter_four, chapter_three, chapter_two
-from .summary import conclusive_insights, headline_indicators
+from .summary import conclusive_insights, headline_indicators, question_scorecard
 
 __all__ = [
     "chapter_eight", "chapter_five", "chapter_four", "chapter_seven", "chapter_six",
     "chapter_three", "chapter_two", "conclusive_insights", "headline_indicators",
-    "intersectional", "stereotypes",
+    "intersectional", "question_scorecard", "stereotypes",
 ]

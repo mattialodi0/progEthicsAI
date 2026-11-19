@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..measurable import unmeasurable_from_transitions
 from ..explain import esc, label, number, pct
 from .common import MIN_GROUP
 
@@ -12,10 +13,15 @@ def chapter_six(data: dict[str, Any]) -> list[str]:
     notes: list[str] = []
     by_attribute = data.get("by_attribute", {})
     gaps = []
+    unmeasurable_notes = []
     for attribute, item in by_attribute.items():
+        unmeasurable = unmeasurable_from_transitions(item)
+        if unmeasurable:
+            unmeasurable_notes.append(f"{esc(attribute)}: " + ", ".join(
+                esc(value) for value in sorted(unmeasurable)))
         rates = {condition: number(stats.get("rate"))
                  for condition, stats in (item.get("adherence") or {}).items()
-                 if (stats.get("n") or 0) >= MIN_GROUP}
+                 if (stats.get("n") or 0) >= MIN_GROUP and condition not in unmeasurable}
         rates = {key: value for key, value in rates.items() if value is not None}
         if len(rates) >= 2:
             low = min(rates, key=rates.get)
@@ -24,14 +30,15 @@ def chapter_six(data: dict[str, Any]) -> list[str]:
     gaps.sort(reverse=True)
     for gap, attribute, low, high, rates in gaps[:3]:
         if gap >= 0.1:
-            zero_note = (" A 0% rate usually means the requested label never matches a "
-                         "detector label; check the label mapping before reading it as bias."
-                         if rates[low] == 0 else "")
             notes.append(
                 f"In matched <strong>{esc(attribute)}</strong> pairs, the requested value is "
                 f"realised for {esc(high)} {pct(rates[high], 0)} of the time but for "
-                f"{esc(low)} only {pct(rates[low], 0)}.{zero_note}"
+                f"{esc(low)} only {pct(rates[low], 0)}."
             )
+    if unmeasurable_notes:
+        notes.append("Never detected in any pair, so shown as n/a rather than 0% "
+                     "(the detector or the captions have no such label): "
+                     + "; ".join(unmeasurable_notes) + ".")
     distances = {attribute: number((item.get("embeddings") or {})
                                    .get("paired_cosine_distance", {}).get("mean"))
                  for attribute, item in by_attribute.items()}

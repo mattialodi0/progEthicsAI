@@ -27,17 +27,25 @@
       const totals = rows.map(([, counts]) =>
         Object.values(counts).reduce((sum, value) => sum + Number(value), 0));
       const labels = rows.map(([name], index) => `${name} (n=${totals[index]})`);
-      const traces = categories.map((category) => ({
-        type: "bar", orientation: "h", name: category,
-        y: labels,
-        x: rows.map(([, counts], index) =>
-          totals[index] ? 100 * Number(counts[category] || 0) / totals[index] : 0),
-        customdata: rows.map(([, counts]) => Number(counts[category] || 0)),
-        marker: {color: chapterThreeColors[dimension][category]},
-        hovertemplate: `%{y}<br>${category}: %{x:.1f}% (%{customdata} faces)<extra></extra>`
-      })).filter((trace) => trace.customdata.some((value) => value > 0));
+      const traces = categories.map((category) => {
+        const shares = rows.map(([, counts], index) =>
+          totals[index] ? 100 * Number(counts[category] || 0) / totals[index] : 0);
+        return {
+          type: "bar", orientation: "h", name: category,
+          y: labels,
+          x: shares,
+          // Label segments wide enough to hold the text; hover gives the rest.
+          text: shares.map((share) => share >= 8 ? share.toFixed(0) + "%" : ""),
+          textposition: "inside", insidetextanchor: "middle", textangle: 0,
+          textfont: {size: 11},
+          customdata: rows.map(([, counts]) => Number(counts[category] || 0)),
+          marker: {color: chapterThreeColors[dimension][category]},
+          hovertemplate: `%{y}<br>${category}: %{x:.1f}% (%{customdata} faces)<extra></extra>`
+        };
+      }).filter((trace) => trace.customdata.some((value) => value > 0));
       Plotly.react(element, traces, {
         barmode: "stack", height: height || Math.max(240, 120 + 34 * rows.length),
+        uniformtext: {mode: "hide", minsize: 9},
         margin: {t: 40, b: 45, l: 10, r: 10},
         xaxis: {title: "Share of detected faces (%)", range: [0, 100]},
         yaxis: {autorange: "reversed"},
